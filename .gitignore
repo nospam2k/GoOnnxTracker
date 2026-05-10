@@ -1,0 +1,32 @@
+# Build artifacts
+gotracker
+gotracker-*
+*.exe
+*.dll
+*.dylib
+*.so
+*.o
+
+# IDE & system
+.DS_Store
+.claude/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python
+/pythonft/venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Runtime
+/config/
+/tmp/
+*.log
+
+# Dependencies
+onnxruntime/
+onnxruntime.zip
+/extras/onnx-builds/

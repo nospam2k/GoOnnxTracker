@@ -1,0 +1,49 @@
+name: Build ONNX Runtime DirectML
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Clone ONNX Runtime
+        shell: cmd
+        run: |
+          git clone --depth 1 --branch v1.25.1 https://github.com/microsoft/onnxruntime.git
+
+      - name: Build ONNX Runtime with DirectML
+        shell: cmd
+        working-directory: onnxruntime
+        run: |
+          build.bat ^
+            --config Release ^
+            --build_shared_lib ^
+            --parallel ^
+            --skip_tests ^
+            --use_dml ^
+            --cmake_generator "Visual Studio 17 2022"
+
+      - name: List build outputs
+        shell: cmd
+        working-directory: onnxruntime
+        run: dir /s build\Windows\Release\Release\*.dll build\Windows\Release\Release\*.lib
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: onnxruntime-directml
+          path: |
+            onnxruntime\build\Windows\Release\Release\onnxruntime.dll
+            onnxruntime\build\Windows\Release\Release\onnxruntime.lib
+            onnxruntime\build\Windows\Release\Release\onnxruntime_providers_dml.dll
+            onnxruntime\build\Windows\Release\Release\onnxruntime_providers_shared.dll

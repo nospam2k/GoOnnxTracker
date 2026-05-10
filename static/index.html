@@ -1,0 +1,3245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Management Platform</title>
+    <style>
+        :root {
+            --text-color: #A9B1BC;
+            --text-color-dark: #7c8188;
+            --main-color: #3066be;
+            --main-color-l: #4b82db;
+            --body-color: #212121;
+            --dark-color: #1b1b1f;
+            --popup-color: #383838;
+            --button-color: #3e3e3e;
+            --button-color-light: #4a4a4a;
+            --side-bar-color: #212125;
+            --sidebar-width: 160px;
+            --error-color: #E11D62;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: var(--dark-color);
+            color: var(--text-color);
+            font-family: sans-serif;
+            font-size: 14px;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        button {
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-drag: none;
+            -webkit-app-region: no-drag;
+        }
+
+        button:active, button.pressed {
+            background: var(--main-color) !important;
+            color: #fff !important;
+        }
+
+        /* ── Sidebar ─────────────────────────────────────────── */
+        #sidebar {
+            width: var(--sidebar-width);
+            min-width: var(--sidebar-width);
+            background: var(--side-bar-color);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+            border-right: 1px solid #2e2e32;
+            transition: width 0.2s ease, min-width 0.2s ease;
+        }
+
+        body.sidebar-collapsed #sidebar {
+            width: 0;
+            min-width: 0;
+            border-right: none;
+        }
+
+        #sidebar-top {
+            padding: 10px 8px 8px;
+            border-bottom: 1px solid #2e2e32;
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        #add-camera-btn { flex: 1; }
+
+        #sidebar-collapse-btn {
+            flex-shrink: 0;
+            background: none;
+            border: 1px solid #3a3a3e;
+            border-radius: 4px;
+            color: var(--text-color-dark);
+            cursor: pointer;
+            padding: 4px 7px;
+            font-size: 13px;
+            line-height: 1;
+            font-family: inherit;
+        }
+
+        #sidebar-collapse-btn:hover { color: var(--text-color); background: var(--button-color); }
+
+        #sidebar-expand-tab {
+            display: none;
+            position: fixed;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            background: var(--side-bar-color);
+            border: 1px solid #2e2e32;
+            border-left: none;
+            border-radius: 0 4px 4px 0;
+            color: var(--text-color);
+            cursor: pointer;
+            padding: 10px 5px;
+            font-size: 13px;
+            line-height: 1;
+            z-index: 50;
+        }
+
+        #sidebar-expand-tab:hover { background: var(--button-color); }
+
+        body.sidebar-collapsed #sidebar-expand-tab { display: block; }
+
+        #add-camera-btn {
+            width: 100%;
+            padding: 7px 0;
+            background: var(--main-color);
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-family: inherit;
+            transition: background 0.15s;
+        }
+
+        #add-camera-btn:hover {
+            background: var(--main-color-l);
+        }
+
+        /* ── Camera list ─────────────────────────────────────── */
+        #camera-list {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 6px 0;
+        }
+
+        #camera-list::-webkit-scrollbar { width: 6px; }
+        #camera-list::-webkit-scrollbar-track { background: transparent; }
+        #camera-list::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+        .camera-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 8px 6px;
+            cursor: pointer;
+            border-left: 3px solid transparent;
+            transition: background 0.15s, border-color 0.15s;
+            user-select: none;
+            position: relative;
+        }
+
+        .camera-item:hover {
+            background: rgba(255,255,255,0.04);
+        }
+
+        .camera-item.active {
+            border-left-color: var(--main-color);
+            background: rgba(48, 102, 190, 0.12);
+        }
+
+        .camera-item.drag-over {
+            border-top: 2px solid var(--main-color);
+        }
+
+        .camera-thumb {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #111;
+            border-radius: 3px;
+            overflow: hidden;
+            position: relative;
+            margin-bottom: 5px;
+        }
+
+        .camera-thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .camera-thumb .no-feed {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-color-dark);
+            font-size: 11px;
+        }
+
+        .camera-name {
+            font-size: 12px;
+            color: var(--text-color);
+            text-align: center;
+            width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .camera-ip {
+            font-size: 10px;
+            color: var(--text-color-dark);
+            text-align: center;
+            width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* ── Remove-from-slot button (shown on stream hover) ── */
+        .slot-remove-btn {
+            position: absolute;
+            top: 4px;
+            left: 4px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: rgba(225, 29, 98, 0.85);
+            color: #fff;
+            font-size: 11px;
+            line-height: 18px;
+            text-align: center;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.15s;
+            z-index: 10;
+            user-select: none;
+            border: none;
+        }
+
+        .cam-stream:hover .slot-remove-btn {
+            opacity: 1;
+        }
+
+        /* drag handle — shown on hover */
+        .drag-handle {
+            position: absolute;
+            top: 6px;
+            right: 4px;
+            cursor: grab;
+            opacity: 0;
+            transition: opacity 0.15s;
+            color: var(--text-color-dark);
+            font-size: 12px;
+            line-height: 1;
+        }
+
+        .camera-item:hover .drag-handle {
+            opacity: 1;
+        }
+
+        .camera-item.dragging {
+            opacity: 0.4;
+        }
+
+        /* ── Add camera modal ────────────────────────────────── */
+        #modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #modal-overlay.open {
+            display: flex;
+        }
+
+        #modal {
+            background: var(--popup-color);
+            border-radius: 6px;
+            padding: 20px;
+            width: 340px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+        }
+
+        #modal h2 {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 14px;
+            color: #fff;
+        }
+
+        /* tabs */
+        .modal-tabs {
+            display: flex;
+            margin-bottom: 16px;
+            border-bottom: 1px solid #444;
+        }
+
+        .modal-tab {
+            flex: 1;
+            padding: 7px 0;
+            text-align: center;
+            font-size: 13px;
+            cursor: pointer;
+            color: var(--text-color-dark);
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+            transition: color 0.15s, border-color 0.15s;
+            user-select: none;
+        }
+
+        .modal-tab.active {
+            color: var(--main-color-l);
+            border-bottom-color: var(--main-color-l);
+        }
+
+        .modal-pane { display: none; }
+        .modal-pane.active { display: block; }
+
+        #modal label {
+            display: block;
+            font-size: 12px;
+            color: var(--text-color-dark);
+            margin-bottom: 4px;
+        }
+
+        #modal input[type="text"] {
+            width: 100%;
+            padding: 7px 9px;
+            background: var(--dark-color);
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: var(--text-color);
+            font-size: 13px;
+            font-family: inherit;
+            margin-bottom: 12px;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        #modal input[type="text"]:focus {
+            border-color: var(--main-color);
+        }
+
+        #modal-error {
+            font-size: 12px;
+            color: var(--error-color);
+            min-height: 16px;
+            margin-bottom: 8px;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+            margin-top: 4px;
+        }
+
+        .modal-buttons button {
+            padding: 7px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-family: inherit;
+            transition: background 0.15s;
+        }
+
+        #modal-cancel {
+            background: var(--button-color);
+            color: var(--text-color);
+        }
+
+        #modal-cancel:hover {
+            background: var(--button-color-light);
+        }
+
+        #modal-add {
+            background: var(--main-color);
+            color: #fff;
+        }
+
+        #modal-add:hover {
+            background: var(--main-color-l);
+        }
+
+        /* scan tab */
+        #scan-btn {
+            width: 100%;
+            padding: 8px 0;
+            background: var(--button-color);
+            color: var(--text-color);
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-family: inherit;
+            transition: background 0.15s;
+            margin-bottom: 12px;
+        }
+
+        #scan-btn:hover:not(:disabled) { background: var(--button-color-light); }
+        #scan-btn:disabled { opacity: 0.5; cursor: default; }
+
+        #scan-status {
+            font-size: 12px;
+            color: var(--text-color-dark);
+            min-height: 16px;
+            margin-bottom: 8px;
+        }
+
+        #scan-results {
+            max-height: 180px;
+            overflow-y: auto;
+            margin-bottom: 8px;
+        }
+
+        #scan-results::-webkit-scrollbar { width: 5px; }
+        #scan-results::-webkit-scrollbar-track { background: transparent; }
+        #scan-results::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+
+        .scan-result-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.15s;
+            font-size: 13px;
+        }
+
+        .scan-result-item:hover { background: rgba(255,255,255,0.06); }
+
+        .scan-result-item.selected { background: rgba(48,102,190,0.2); }
+
+        .scan-result-ip {
+            flex: 1;
+            color: var(--text-color);
+            font-family: monospace;
+        }
+
+        .scan-result-label {
+            font-size: 11px;
+            color: var(--text-color-dark);
+        }
+
+        /* delete button on thumbnail */
+        .camera-delete {
+            position: absolute;
+            top: 4px;
+            left: 4px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: rgba(225, 29, 98, 0.85);
+            color: #fff;
+            font-size: 11px;
+            line-height: 18px;
+            text-align: center;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.15s;
+            z-index: 2;
+        }
+
+        .camera-item:hover .camera-delete {
+            opacity: 1;
+        }
+
+        /* name-prompt pane */
+        #pane-name-prompt { }
+
+        #name-prompt-error {
+            font-size: 12px;
+            color: var(--error-color);
+            min-height: 16px;
+            margin-bottom: 8px;
+        }
+
+        /* ── Layout switcher ─────────────────────────────────── */
+        #layout-switcher {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            padding: 8px 6px;
+            border-top: 1px solid #2e2e32;
+        }
+
+        .layout-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 5px;
+            border-radius: 4px;
+            color: var(--text-color-dark);
+            transition: color 0.15s, background 0.15s;
+            line-height: 0;
+        }
+
+        .layout-btn:hover {
+            color: var(--text-color);
+            background: rgba(255,255,255,0.06);
+        }
+
+        .layout-btn.active {
+            color: var(--main-color-l);
+            background: rgba(48,102,190,0.15);
+        }
+
+        .layout-btn svg {
+            width: 22px;
+            height: 22px;
+            display: block;
+        }
+
+        /* ── Main area ───────────────────────────────────────── */
+        #main {
+            flex: 1;
+            display: flex;
+            flex-wrap: wrap;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        .cam-section {
+            display: flex;
+            flex-direction: row;   /* overridden by .tall via ResizeObserver */
+            border: 1px solid #2e2e32;
+            box-sizing: border-box;
+            overflow: hidden;
+            cursor: pointer;
+            position: relative;
+            transition: border-color 0.15s;
+        }
+
+        .cam-section.selected {
+            border-color: var(--main-color-l);
+            box-shadow: inset 0 0 0 1px var(--main-color-l);
+        }
+
+        /* sidebar hint when a section is selected */
+        #camera-list.assigning .camera-item {
+            cursor: crosshair;
+        }
+
+        #camera-list.assigning .camera-item:hover {
+            background: rgba(48,102,190,0.15);
+        }
+
+        #assign-hint {
+            padding: 6px 8px;
+            font-size: 11px;
+            color: var(--main-color-l);
+            text-align: center;
+            display: none;
+        }
+
+        #assign-hint.visible { display: block; }
+
+        /* ── Empty section ───────────────────────────────────── */
+        .cam-section.no-camera .cam-controls { display: none; }
+        .cam-section.no-camera .cam-stream { display: none; }
+
+        .no-cam-hint {
+            display: none;
+            position: absolute;
+            inset: 0;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-color-dark);
+            font-size: 13px;
+        }
+        .cam-section.no-camera .no-cam-hint { display: flex; }
+
+        /* ── Stream area ─────────────────────────────────────── */
+        .cam-stream {
+            background: #0d0d0d;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .tracking-canvas {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+        }
+
+        .cam-stream img {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: contain;
+        }
+
+        .cam-section.wide { flex-direction: row; }
+        .cam-section.tall { flex-direction: column; }
+
+        /* wide: stream fills height, 16:9 width, max 65% of section */
+        .cam-section.wide .cam-stream {
+            height: 100%;
+            aspect-ratio: 16 / 9;
+            max-width: 65%;
+            width: auto;
+        }
+
+        /* tall: stream fills width, 16:9 height, max 55% of section height */
+        .cam-section.tall .cam-stream {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            max-height: 55%;
+            height: auto;
+        }
+
+        /* ── Controls panel ──────────────────────────────────── */
+        .cam-controls {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-width: 0;
+        }
+
+        /* ── Tab bar ─────────────────────────────────────────── */
+        .cam-tabs {
+            display: flex;
+            flex-shrink: 0;
+            border-bottom: 1px solid #2e2e32;
+        }
+
+        .cam-tab {
+            flex: 1;
+            padding: 8px 4px;
+            text-align: center;
+            font-size: 18px;
+            cursor: pointer;
+            color: var(--text-color-dark);
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+            transition: color 0.15s, border-color 0.15s;
+            user-select: none;
+            white-space: nowrap;
+        }
+
+        .cam-tab:hover { color: var(--text-color); }
+
+        .cam-tab.active {
+            color: var(--main-color-l);
+            border-bottom-color: var(--main-color-l);
+        }
+
+        /* ── Tab content ─────────────────────────────────────── */
+        .cam-tab-content {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        .cam-tab-content::-webkit-scrollbar { width: 5px; }
+        .cam-tab-content::-webkit-scrollbar-track { background: transparent; }
+        .cam-tab-content::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+        .tab-pane {
+            display: none;
+            padding: 12px;
+            color: var(--text-color-dark);
+            font-size: 13px;
+        }
+
+        .tab-pane.active { display: block; }
+
+        /* ── PTZ tab ─────────────────────────────────────────── */
+        .ptz-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 10px;
+            font-size: 12px;
+        }
+
+        .ptz-main {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .dpad {
+            display: grid;
+            grid-template-columns: repeat(3, 34px);
+            grid-template-rows: repeat(3, 34px);
+            grid-template-areas:
+                ". up ."
+                "left home right"
+                ". down .";
+            gap: 2px;
+        }
+
+        .dpad button {
+            width: 34px;
+            height: 34px;
+            background: var(--button-color);
+            border: none;
+            border-radius: 4px;
+            color: var(--text-color);
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.1s;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-drag: none;
+            -webkit-app-region: no-drag;
+        }
+
+        .dpad button:hover { background: var(--button-color-light); }
+        .dpad button:active { background: var(--main-color); }
+        .dpad button:active, .dpad button.pressed { background: var(--main-color); }
+
+        .dpad button { font-size: 26px; line-height: 1; }
+        .dpad button.home { font-size: inherit; display: flex; align-items: center; justify-content: center; }
+        .dpad button[data-ptz="up"]    { grid-area: up; }
+        .dpad button[data-ptz="left"]  { grid-area: left; }
+        .dpad button[data-ptz="home"]  { grid-area: home; }
+        .dpad button[data-ptz="right"] { grid-area: right; }
+        .dpad button[data-ptz="down"]  { grid-area: down; }
+
+        .zoom-slider, .focus-slider {
+            flex: 1;
+            cursor: pointer;
+            accent-color: var(--main-color);
+        }
+
+        .nudge-btn {
+            flex-shrink: 0;
+            padding: 0 5px;
+            height: 22px;
+            background: var(--button-color);
+            border: none;
+            border-radius: 4px;
+            color: var(--text-color);
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+            font-family: inherit;
+            transition: background 0.1s;
+        }
+        .nudge-btn:hover  { background: var(--button-color-light); }
+        .nudge-btn:active { background: var(--main-color); color: #fff; }
+
+        .af-btn {
+            flex-shrink: 0;
+            width: 34px;
+            height: 26px;
+            background: var(--button-color);
+            border: none;
+            border-radius: 4px;
+            color: var(--text-color);
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+            font-family: inherit;
+            transition: background 0.1s;
+        }
+        .af-btn:hover { background: var(--button-color-light); }
+        .af-btn.af-on { background: var(--main-color); color: #fff; }
+
+        .zf-label {
+            font-size: 10px;
+            color: var(--text-color-dark);
+            text-align: center;
+            margin-top: 4px;
+        }
+
+        .presets-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 3px;
+        }
+
+        .preset-btn {
+            padding: 4px 2px;
+            min-height: 36px;
+            height: auto;
+            background: var(--button-color);
+            border: none;
+            border-radius: 4px;
+            color: var(--text-color);
+            cursor: pointer;
+            font-size: 22px;
+            font-family: inherit;
+            transition: background 0.1s;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-drag: none;
+            -webkit-app-region: no-drag;
+        }
+
+        .preset-btn:hover { background: var(--button-color-light); }
+        .preset-btn:active { background: var(--main-color); color: #fff; }
+        .preset-btn.pressed { background: var(--main-color); color: #fff; }
+        .preset-btn.holding { background: var(--main-color); color: #fff; }
+
+        .preset-confirm {
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            background: var(--popup-color);
+            border-radius: 4px;
+            padding: 10px;
+            margin-top: 6px;
+        }
+
+        .preset-confirm.visible { display: flex; }
+
+        .preset-confirm-label {
+            font-size: 12px;
+            color: var(--text-color);
+        }
+
+        .preset-confirm input[type="text"] {
+            width: 100%;
+            padding: 5px 8px;
+            background: var(--dark-color);
+            border: 1px solid #444;
+            border-radius: 3px;
+            color: var(--text-color);
+            font-size: 12px;
+            font-family: inherit;
+        }
+
+        .preset-confirm-btns {
+            display: flex;
+            gap: 6px;
+            justify-content: flex-end;
+        }
+
+        .preset-confirm-btns button {
+            padding: 4px 12px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            font-family: inherit;
+        }
+
+        .preset-confirm-cancel { background: var(--button-color); color: var(--text-color); }
+        .preset-confirm-ok     { background: var(--main-color);   color: #fff; }
+
+        .ptz-label {
+            font-size: 10px;
+            color: var(--text-color-dark);
+            margin-bottom: 2px;
+        }
+
+        /* ── Settings tab ────────────────────────────────────── */
+        .settings-inner-tabs {
+            display: flex;
+            flex-shrink: 0;
+            border-bottom: 1px solid #2e2e32;
+        }
+
+        .settings-inner-tab {
+            flex: 1;
+            padding: 6px 4px;
+            text-align: center;
+            font-size: 11px;
+            cursor: pointer;
+            color: var(--text-color-dark);
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+            transition: color 0.15s, border-color 0.15s;
+            user-select: none;
+        }
+
+        .settings-inner-tab.active {
+            color: var(--main-color-l);
+            border-bottom-color: var(--main-color-l);
+        }
+
+        .settings-inner-pane {
+            display: none;
+            padding: 8px 10px;
+            flex-direction: column;
+            gap: 8px;
+            font-size: 12px;
+        }
+
+        .settings-inner-pane.active { display: flex; }
+
+        .setting-row {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .setting-row label {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            color: var(--text-color);
+            font-size: 12px;
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+
+        .setting-row label span {
+            color: var(--main-color-l);
+            min-width: 20px;
+            text-align: right;
+        }
+
+        .setting-row input[type="range"] {
+            flex: 1;
+            -webkit-appearance: none;
+            height: 4px;
+            background: var(--button-color-light);
+            border-radius: 2px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .setting-row input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--main-color);
+            cursor: pointer;
+        }
+
+        .setting-select {
+            flex: 1;
+            background: var(--dark-color);
+            border: 1px solid #444;
+            border-radius: 3px;
+            color: var(--text-color);
+            font-size: 12px;
+            padding: 4px 6px;
+            font-family: inherit;
+            cursor: pointer;
+        }
+
+        .setting-row-inline {
+            justify-content: space-between;
+        }
+
+        /* ── Settings reset ──────────────────────────────────── */
+        .settings-reset-row {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding: 6px 10px 2px;
+            gap: 6px;
+        }
+
+        .settings-reset-btn {
+            padding: 4px 10px;
+            background: none;
+            border: 1px solid #555;
+            border-radius: 3px;
+            color: var(--text-color-dark);
+            font-size: 11px;
+            font-family: inherit;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
+        }
+
+        .settings-reset-btn:hover {
+            background: rgba(225,29,98,0.15);
+            border-color: var(--error-color);
+            color: var(--error-color);
+        }
+
+        .settings-reset-confirm {
+            display: none;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: var(--text-color-dark);
+        }
+
+        .settings-reset-confirm.visible { display: flex; }
+
+        .settings-reset-confirm-yes {
+            padding: 3px 8px;
+            background: var(--error-color);
+            border: none;
+            border-radius: 3px;
+            color: #fff;
+            font-size: 11px;
+            font-family: inherit;
+            cursor: pointer;
+        }
+
+        .settings-reset-confirm-no {
+            padding: 3px 8px;
+            background: var(--button-color);
+            border: none;
+            border-radius: 3px;
+            color: var(--text-color);
+            font-size: 11px;
+            font-family: inherit;
+            cursor: pointer;
+        }
+
+        /* ── IEC Profiles ────────────────────────────────────── */
+        .iec-wrap {
+            padding: 10px 12px;
+            border-top: 1px solid #2e2e32;
+            font-size: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .iec-section-label {
+            color: var(--text-color-dark);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .iec-input-row {
+            display: flex;
+            gap: 5px;
+        }
+
+        .iec-input-row input[type="text"] {
+            flex: 1;
+            padding: 5px 8px;
+            background: var(--dark-color);
+            border: 1px solid #444;
+            border-radius: 3px;
+            color: var(--text-color);
+            font-size: 12px;
+            font-family: inherit;
+        }
+
+        .iec-input-row button {
+            padding: 5px 10px;
+            background: var(--button-color);
+            border: none;
+            border-radius: 3px;
+            color: var(--text-color);
+            cursor: pointer;
+            font-size: 12px;
+            font-family: inherit;
+            white-space: nowrap;
+        }
+
+        .iec-input-row button:hover { background: var(--button-color-light); }
+
+        .iec-profile-list {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            max-height: 130px;
+            overflow-y: auto;
+        }
+
+        .iec-profile-list::-webkit-scrollbar { width: 5px; }
+        .iec-profile-list::-webkit-scrollbar-track { background: transparent; }
+        .iec-profile-list::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+        .iec-profile-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 5px 8px;
+            background: var(--dark-color);
+            border-radius: 3px;
+            gap: 6px;
+        }
+
+        .iec-profile-info { flex: 1; min-width: 0; }
+
+        .iec-profile-name {
+            color: var(--text-color);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .iec-profile-date {
+            color: var(--text-color-dark);
+            font-size: 10px;
+        }
+
+        .iec-profile-btns {
+            display: flex;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
+        .iec-load-btn {
+            padding: 3px 8px;
+            background: var(--main-color);
+            border: none;
+            border-radius: 3px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 11px;
+            font-family: inherit;
+        }
+
+        .iec-load-btn:hover { background: var(--main-color-l); }
+
+        .iec-del-btn {
+            padding: 3px 6px;
+            background: transparent;
+            border: 1px solid #555;
+            border-radius: 3px;
+            color: var(--text-color-dark);
+            cursor: pointer;
+            font-size: 11px;
+        }
+
+        .iec-del-btn:hover { color: var(--error-color); border-color: var(--error-color); }
+
+        .iec-empty {
+            color: var(--text-color-dark);
+            font-style: italic;
+            padding: 2px 0;
+        }
+
+        .iec-status {
+            font-size: 11px;
+            color: var(--main-color-l);
+            min-height: 14px;
+        }
+
+        /* ── Face tracking tab ───────────────────────────────── */
+        .tracking-wrap {
+            padding: 10px;
+            font-size: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .tracking-toggle-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 13px;
+            color: var(--text-color);
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 40px;
+            height: 22px;
+            cursor: pointer;
+        }
+
+        .toggle-switch input { display: none; }
+
+        .toggle-slider {
+            position: absolute;
+            inset: 0;
+            background: var(--button-color-light);
+            border-radius: 11px;
+            transition: background 0.2s;
+        }
+
+        .toggle-slider:before {
+            content: '';
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            left: 3px;
+            top: 3px;
+            background: #fff;
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+
+        .toggle-switch input:checked + .toggle-slider { background: var(--main-color); }
+        .toggle-switch input:checked + .toggle-slider:before { transform: translateX(18px); }
+
+        .tracking-section-label {
+            color: var(--text-color-dark);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 4px;
+        }
+
+        .radio-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .radio-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-color);
+            cursor: pointer;
+        }
+
+        .radio-row input[type="radio"] { accent-color: var(--main-color); cursor: pointer; }
+
+        .radio-row input[type="number"] {
+            width: 42px;
+            background: var(--dark-color);
+            border: 1px solid #444;
+            border-radius: 3px;
+            color: var(--text-color);
+            font-size: 12px;
+            padding: 2px 4px;
+            font-family: inherit;
+        }
+
+        .tracking-status {
+            font-size: 11px;
+            color: var(--text-color-dark);
+            font-style: italic;
+        }
+
+        .tracking-divider {
+            height: 1px;
+            background: #333;
+            margin: 8px 0 6px;
+        }
+
+        .tracking-inline {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 0 2px 6px;
+        }
+
+        .tracking-inline-row {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .tracking-lost-row {
+            flex-direction: row;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tracking-lost-row .tracking-section-label {
+            margin-bottom: 0;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .radio-group-inline {
+            flex-direction: row;
+            flex-wrap: wrap;
+            gap: 6px 10px;
+        }
+
+        /* layout-1: single full section */
+        #main.layout-1 .cam-section {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* layout-2: two side-by-side columns */
+        #main.layout-2 .cam-section {
+            width: 50%;
+            height: 100%;
+        }
+
+        /* layout-3: three columns */
+        #main.layout-3 .cam-section {
+            width: 33.333%;
+            height: 100%;
+        }
+
+        /* layout-4: 2×2 grid */
+        #main.layout-4 .cam-section {
+            width: 50%;
+            height: 50%;
+        }
+    </style>
+</head>
+<body>
+
+    <button id="sidebar-expand-tab" title="Open sidebar">›</button>
+
+    <!-- Sidebar -->
+    <aside id="sidebar">
+        <div id="sidebar-top">
+            <button id="add-camera-btn">+ Add Camera</button>
+            <button id="sidebar-collapse-btn" title="Collapse sidebar">‹</button>
+        </div>
+        <div id="assign-hint">Click a camera to assign</div>
+        <div id="camera-list">
+            <!-- Camera items injected here -->
+        </div>
+        <div id="layout-switcher">
+            <!-- 1: single box -->
+            <button class="layout-btn active" data-layout="1" title="Single">
+                <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <rect x="2" y="2" width="18" height="18" rx="1"/>
+                </svg>
+            </button>
+            <!-- 2: two vertical columns -->
+            <button class="layout-btn" data-layout="2" title="Two columns">
+                <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <rect x="2" y="2" width="18" height="18" rx="1"/>
+                    <line x1="11" y1="2" x2="11" y2="20"/>
+                </svg>
+            </button>
+            <!-- 3: three vertical columns -->
+            <button class="layout-btn" data-layout="3" title="Three columns">
+                <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <rect x="2" y="2" width="18" height="18" rx="1"/>
+                    <line x1="8" y1="2" x2="8" y2="20"/>
+                    <line x1="14" y1="2" x2="14" y2="20"/>
+                </svg>
+            </button>
+            <!-- 4: 2×2 grid -->
+            <button class="layout-btn" data-layout="4" title="2×2 grid">
+                <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <rect x="2" y="2" width="18" height="18" rx="1"/>
+                    <line x1="11" y1="2" x2="11" y2="20"/>
+                    <line x1="2" y1="11" x2="20" y2="11"/>
+                </svg>
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main content area -->
+    <main id="main" class="layout-1">
+        <!-- Camera sections injected here -->
+    </main>
+
+    <!-- Add Camera Modal -->
+    <div id="modal-overlay">
+        <div id="modal">
+            <h2>Add Camera</h2>
+
+            <div class="modal-tabs">
+                <div class="modal-tab active" data-tab="manual">Enter IP</div>
+                <div class="modal-tab" data-tab="scan">Search Network</div>
+            </div>
+
+            <!-- Manual entry pane -->
+            <div class="modal-pane active" id="pane-manual">
+                <label for="input-name">Camera Name</label>
+                <input type="text" id="input-name" placeholder="e.g. Stage Left">
+                <label for="input-ip">IP Address</label>
+                <input type="text" id="input-ip" placeholder="e.g. 192.168.1.100" autocomplete="off">
+                <div id="modal-error"></div>
+                <div class="modal-buttons">
+                    <button id="modal-cancel">Cancel</button>
+                    <button id="modal-add">Add</button>
+                </div>
+            </div>
+
+            <!-- Scan pane -->
+            <div class="modal-pane" id="pane-scan">
+                <button id="scan-btn">Scan Network</button>
+                <div id="scan-status"></div>
+                <div id="scan-results"></div>
+                <div class="modal-buttons">
+                    <button id="scan-cancel">Cancel</button>
+                    <button id="scan-add" disabled>Add Selected</button>
+                </div>
+            </div>
+
+            <!-- Name prompt pane (shown after selecting from scan) -->
+            <div class="modal-pane" id="pane-name-prompt">
+                <label for="input-scan-name">Camera Name</label>
+                <input type="text" id="input-scan-name" placeholder="e.g. Stage Left">
+                <div id="name-prompt-error"></div>
+                <div class="modal-buttons">
+                    <button id="name-prompt-back">Back</button>
+                    <button id="name-prompt-confirm">Add</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ── WebSocket Tracking (gotracker) ──────────────────────
+        let ws = null;
+        let lastDir = '';
+
+        function connectWS() {
+            const url = `ws://${location.host}/ws`;
+            ws = new WebSocket(url);
+            ws.onopen = () => { console.log('[WS] Connected'); };
+            ws.onmessage = (evt) => {
+                try {
+                    const msg = JSON.parse(evt.data);
+                    handlePoseMessage(msg);
+                } catch (e) {
+                    console.warn('WS parse error:', e, 'data:', evt.data.substring(0, 50));
+                }
+            };
+            ws.onclose = () => { console.log('WS closed, reconnecting...'); setTimeout(connectWS, 2000); };
+            ws.onerror = (e) => { console.error('WS error:', e); ws.close(); };
+        }
+        connectWS();
+
+        function getDeadZone(slot) {
+            if (!trackingDeadZone[slot]) trackingDeadZone[slot] = { left: 0.46, right: 0.54 };
+            return trackingDeadZone[slot];
+        }
+
+        function handlePoseMessage(data) {
+            const slot = 0;
+            const ip = getSlotIp ? getSlotIp(slot) : null;
+            if (data.cmd === 'notfound') {
+                if (trackingActive[slot] && !trackingLost[slot]) {
+                    trackingLost[slot] = true;
+                    const settings = trackingSettings[slot] || {};
+                    const behavior = settings.lostBehavior || 'stop';
+                    if (behavior === 'preset') {
+                        const presetNum = settings.lostPreset || 1;
+                        if (ip) cgi(ip, `/cgi-bin/ptzctrl.cgi?ptzcmd&preset&call&${presetNum}`);
+                    } else if (behavior === 'stop') {
+                        if (ip) cgi(ip, '/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop');
+                    }
+                }
+                return;
+            }
+            if (!data.keypoints || data.keypoints.length === 0) return;
+            trackingLost[slot] = false;
+
+            if (!ip || !trackingActive[slot]) {
+                return;
+            }
+
+            // Always draw the overlay with the pose data
+            drawTrackingOverlay(slot, data.keypoints, data.box);
+
+            const faceNames = ['left_ear','left_eye','nose','right_eye','right_ear'];
+            const faceKps = data.keypoints.filter(k => faceNames.includes(k.name));
+            const used = faceKps.length >= 2 ? faceKps : data.keypoints;
+            const cx = used.length > 0 ? used.reduce((s,k) => s + k.x, 0) / used.length : 0.5;
+
+            const dz = getDeadZone(slot);
+            let dir = '';
+            if      (cx > dz.right) dir = 'right';
+            else if (cx < dz.left)  dir = 'left';
+
+            if (!dir) {
+                if (lastDir !== '') {
+                    lastDir = '';
+                    cgi(ip, '/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop');
+                }
+            } else {
+                const vx = Math.max(1, +trackingMaxSpeed[slot] || 10);
+                if (dir !== lastDir) {
+                    lastDir = dir;
+                    cgi(ip, `/cgi-bin/ptzctrl.cgi?ptzcmd&${dir}&${vx}&${vx}`);
+                }
+            }
+        }
+
+        // ── State ──────────────────────────────────────────────
+        let cameras      = [];   // [{ id, name, ip }]
+        let activeCamera = null;
+        let dragSrcIndex = null;
+
+        // ── Modal shared ───────────────────────────────────────
+        const overlay = document.getElementById('modal-overlay');
+
+        document.getElementById('add-camera-btn').onclick = () => openModal();
+        overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') { closeModal(); clearSlotSelection(); }
+        });
+
+        // Tab switching
+        document.querySelectorAll('.modal-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.modal-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.modal-pane').forEach(p => p.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById('pane-' + tab.dataset.tab).classList.add('active');
+            });
+        });
+
+        function openModal() {
+            // reset manual pane
+            document.getElementById('input-name').value = '';
+            document.getElementById('input-ip').value   = '';
+            document.getElementById('modal-error').textContent = '';
+            // reset scan pane
+            document.getElementById('scan-status').textContent = '';
+            document.getElementById('scan-results').innerHTML  = '';
+            document.getElementById('scan-add').disabled = true;
+            scanSelected = null;
+            // show manual tab by default
+            document.querySelectorAll('.modal-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.modal-pane').forEach(p => p.classList.remove('active'));
+            document.querySelector('.modal-tab[data-tab="manual"]').classList.add('active');
+            document.getElementById('pane-manual').classList.add('active');
+
+            overlay.classList.add('open');
+            document.getElementById('input-name').focus();
+        }
+
+        function closeModal() {
+            overlay.classList.remove('open');
+            if (scanAbort) { scanAbort(); scanAbort = null; }
+        }
+
+        // ── Manual entry ───────────────────────────────────────
+        document.getElementById('modal-cancel').onclick = () => closeModal();
+        document.getElementById('modal-add').onclick    = () => submitManual();
+        document.getElementById('pane-manual').addEventListener('keydown', e => {
+            if (e.key === 'Enter') submitManual();
+        });
+
+        function submitManual() {
+            const name = document.getElementById('input-name').value.trim();
+            const ip   = document.getElementById('input-ip').value.trim();
+            const err  = document.getElementById('modal-error');
+
+            if (!name)           { err.textContent = 'Camera name is required.'; return; }
+            if (!ip)             { err.textContent = 'IP address is required.'; return; }
+            if (!isValidIp(ip))  { err.textContent = 'Enter a valid IP address.'; return; }
+            if (cameras.some(c => c.ip === ip)) { err.textContent = `A camera with IP ${ip} already exists.`; return; }
+
+            addCamera(name, ip);
+            closeModal();
+        }
+
+        // ── Scan ───────────────────────────────────────────────
+        let scanSelected = null;
+        let scanAbort    = null;
+
+        document.getElementById('scan-cancel').onclick = () => closeModal();
+        document.getElementById('scan-btn').onclick    = () => startScan();
+        document.getElementById('scan-add').onclick    = () => {
+            if (!scanSelected) return;
+            showNamePrompt(scanSelected);
+        };
+
+        // ── Name prompt (post-scan) ────────────────────────────
+        document.getElementById('name-prompt-back').onclick = () => showPane('scan');
+        document.getElementById('name-prompt-confirm').onclick = () => confirmScanAdd();
+        document.getElementById('pane-name-prompt').addEventListener('keydown', e => {
+            if (e.key === 'Enter') confirmScanAdd();
+        });
+
+        function showNamePrompt(cam) {
+            const input = document.getElementById('input-scan-name');
+            input.value = cam.name || cam.ip;
+            document.getElementById('name-prompt-error').textContent = '';
+            showPane('name-prompt');
+            input.select();
+        }
+
+        function confirmScanAdd() {
+            const name = document.getElementById('input-scan-name').value.trim();
+            const nameErr = document.getElementById('name-prompt-error');
+            if (!name) { nameErr.textContent = 'Name is required.'; return; }
+            if (cameras.some(c => c.ip === scanSelected.ip)) { nameErr.textContent = `A camera with IP ${scanSelected.ip} already exists.`; return; }
+            addCamera(name, scanSelected.ip);
+            closeModal();
+        }
+
+        function showPane(id) {
+            document.querySelectorAll('.modal-pane').forEach(p => p.classList.remove('active'));
+            document.getElementById('pane-' + id).classList.add('active');
+        }
+
+        async function startScan() {
+            const btn     = document.getElementById('scan-btn');
+            const status  = document.getElementById('scan-status');
+            const results = document.getElementById('scan-results');
+
+            btn.disabled = true;
+            btn.textContent = 'Scanning…';
+            status.textContent = 'Looking for cameras on your network…';
+            results.innerHTML  = '';
+            scanSelected = null;
+            document.getElementById('scan-add').disabled = true;
+
+            let aborted = false;
+            scanAbort = () => { aborted = true; };
+
+            try {
+                const res  = await fetch('/api/scan');
+                const data = await res.json();
+
+                if (aborted) return;
+
+                if (!data.cameras || data.cameras.length === 0) {
+                    status.textContent = 'No cameras found on the network.';
+                } else {
+                    status.textContent = `Found ${data.cameras.length} camera${data.cameras.length > 1 ? 's' : ''}`;
+                    data.cameras.forEach(cam => {
+                        const item = document.createElement('div');
+                        item.className = 'scan-result-item';
+                        item.innerHTML = `
+                            <span class="scan-result-ip">${cam.ip}</span>
+                            <span class="scan-result-label">${cam.name || 'PTZOptics'}</span>
+                        `;
+                        item.addEventListener('click', () => {
+                            document.querySelectorAll('.scan-result-item').forEach(el => el.classList.remove('selected'));
+                            item.classList.add('selected');
+                            scanSelected = cam;
+                            document.getElementById('scan-add').disabled = false;
+                        });
+                        results.appendChild(item);
+                    });
+                }
+            } catch (err) {
+                if (!aborted) status.textContent = 'Scan failed. Is the server running?';
+            } finally {
+                if (!aborted) {
+                    btn.disabled = false;
+                    btn.textContent = 'Scan Again';
+                }
+            }
+        }
+
+        // ── Helpers ────────────────────────────────────────────
+        function isValidIp(val) {
+            return /^(\d{1,3}\.){3}\d{1,3}$/.test(val) &&
+                val.split('.').every(n => +n >= 0 && +n <= 255);
+        }
+
+        // ── Persistence ────────────────────────────────────────
+        async function loadCameras() {
+            try {
+                const res  = await fetch('/api/cameras');
+                const data = await res.json();
+                cameras = data.cameras || [];
+
+                if (data.layout) {
+                    currentLayout = data.layout;
+                    document.getElementById('main').className = `layout-${currentLayout}`;
+                    document.querySelectorAll('.layout-btn').forEach(btn => {
+                        btn.classList.toggle('active', +btn.dataset.layout === currentLayout);
+                    });
+                }
+
+                if (data.sections) {
+                    Object.entries(data.sections).forEach(([slot, camId]) => {
+                        sectionCameras[+slot] = camId;
+                    });
+                }
+
+                if (data.stagingCamera) stagingCamera = data.stagingCamera;
+
+                const toIntKeys = obj => Object.fromEntries(Object.entries(obj).map(([k, v]) => [+k, v]));
+
+                if (data.presetNames) presetNames = data.presetNames;
+                if (data.trackingMaxSpeed) {
+                    const numKeys = Object.fromEntries(Object.entries(data.trackingMaxSpeed).map(([k, v]) => [+k, +v]));
+                    Object.assign(trackingMaxSpeed, numKeys);
+                }
+                if (data.trackingActive) Object.assign(trackingActive, toIntKeys(data.trackingActive));
+                if (data.trackingSettings) Object.assign(trackingSettings, toIntKeys(data.trackingSettings));
+                if (data.ptzSpeed)         Object.assign(ptzSpeed,         toIntKeys(data.ptzSpeed));
+                if (data.afState)          Object.assign(afState,          toIntKeys(data.afState));
+                if (data.zoomPosition)     Object.assign(zoomPosition,     toIntKeys(data.zoomPosition));
+                if (data.focusPosition)    Object.assign(focusPosition,    toIntKeys(data.focusPosition));
+
+                if (cameras.length) {
+                    activeCamera = cameras[0].id;
+                    renderList();
+
+                    // Auto-configure backend with first camera on load
+                    const firstCam = cameras[0];
+                    if (firstCam && firstCam.ip) {
+                        fetch('/config', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ cameraUrl: `http://${firstCam.ip}/snapshot.jpg`, cameraIp: firstCam.ip })
+                        }).catch(e => console.warn('[Config] Failed to auto-set camera on load:', e));
+                    }
+                }
+
+                // renderSections already called on init — re-render now that we have state
+                renderSections();
+            } catch (err) {
+                console.warn('Could not load cameras:', err);
+            }
+        }
+
+        function saveCameras() {
+            fetch('/api/cameras', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cameras, layout: currentLayout, sections: sectionCameras, stagingCamera, presetNames, trackingActive, trackingMaxSpeed, trackingSettings, ptzSpeed, afState, zoomPosition, focusPosition })
+            }).catch(err => console.warn('Could not save cameras:', err));
+        }
+
+        // ── Camera management ──────────────────────────────────
+        function addCamera(name, ip) {
+            const cam = { id: Date.now(), name, ip };
+            cameras.push(cam);
+            renderList();
+            setActive(cam.id);
+            saveCameras();
+        }
+
+        function removeCamera(id) {
+            cameras = cameras.filter(c => c.id !== id);
+            if (activeCamera === id) activeCamera = cameras.length ? cameras[0].id : null;
+            renderList();
+            saveCameras();
+        }
+
+        function removeCameraFromSlot(slot) {
+            stopSnapshot(slot);
+            stopTracking(slot);
+            if (currentLayout === 1) {
+                stagingCamera = null;
+                saveCameras();
+            } else {
+                delete sectionCameras[slot];
+                saveCameras();
+            }
+            const sec = document.querySelector(`.cam-section[data-slot="${slot}"]`);
+            if (sec) {
+                sec.classList.add('no-camera');
+                const img = sec.querySelector('img');
+                if (img) { img.src = ''; img.style.display = 'none'; }
+            }
+        }
+
+        function setActive(id) {
+            activeCamera = id;
+            document.querySelectorAll('.camera-item').forEach(el => {
+                el.classList.toggle('active', +el.dataset.id === id);
+            });
+        }
+
+        // ── Layout ─────────────────────────────────────────────
+        let currentLayout = 1;
+        let stagingCamera = null; // used only in 1-slot view, never saved
+
+        // Flip section orientation based on its own dimensions
+        const sectionObserver = new ResizeObserver(entries => {
+            for (const entry of entries) {
+                const { width, height } = entry.contentRect;
+                entry.target.classList.toggle('wide', width >= height);
+                entry.target.classList.toggle('tall', height > width);
+            }
+        });
+
+        // ── Global helpers ─────────────────────────────────────
+        function cgi(ip, path) {
+            return fetch(`/api/cgi/${ip}?q=${encodeURIComponent(path)}`).catch(() => {});
+        }
+
+        // ── Movement watchdog ──────────────────────────────────
+        // Tracks what's currently moving so we can stop it if focus is lost.
+        let activeMove = null;     // { ip, cmd: 'ptzstop' | 'zoomstop' | 'focusstop' }
+        let activeInterval = null; // repeat-send interval for current move
+
+        function emergencyStop() {
+            if (activeInterval) { clearInterval(activeInterval); activeInterval = null; }
+            if (!activeMove) return;
+            const { ip, cmd } = activeMove;
+            activeMove = null;
+            const stopCmd = `/api/cgi/${ip}?q=${encodeURIComponent(`/cgi-bin/ptzctrl.cgi?ptzcmd&${cmd}`)}`;
+            fetch(stopCmd, { keepalive: true }).catch(() => {});
+            setTimeout(() => fetch(stopCmd, { keepalive: true }).catch(() => {}), 150);
+        }
+
+        document.addEventListener('mouseup',       emergencyStop);
+        window.addEventListener('blur',            emergencyStop);
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') emergencyStop();
+        });
+        window.addEventListener('beforeunload', emergencyStop);
+
+        document.addEventListener('contextmenu', e => {
+            if (e.target.closest('button')) e.preventDefault();
+        });
+
+        function parsePresetRange(str) {
+            const nums = new Set();
+            str.split(',').forEach(part => {
+                part = part.trim();
+                const range = part.match(/^(\d+)-(\d+)$/);
+                if (range) {
+                    const a = +range[1], b = +range[2];
+                    for (let n = Math.min(a, b); n <= Math.max(a, b); n++) nums.add(n);
+                } else if (/^\d+$/.test(part)) {
+                    nums.add(+part);
+                }
+            });
+            return [...nums].sort((a, b) => a - b);
+        }
+
+        function getSlotIp(slot) {
+            const camId = currentLayout === 1 ? stagingCamera : sectionCameras[slot];
+            const cam = cameras.find(c => c.id === camId);
+            return cam ? cam.ip : null;
+        }
+
+        // ── Face tracking state ────────────────────────────────
+        const trackingWorkers  = {};   // slot → Worker
+        const trackingActive   = {};   // slot → boolean
+        const trackingMaxSpeed = {};   // slot → number
+        const ptzSpeed         = {};   // slot → number (1–24, default 8)
+        const trackingLost     = {};   // slot → boolean (true = lost action already fired)
+        const trackingSettings = {};   // slot → { lostBehavior, lostPreset }
+        const trackingDeadZone = {};   // slot → { left, right } normalized 0-1
+        const afState          = {};   // slot → boolean (true = AF on)
+        const zoomPosition     = {};   // slot → number (0–16384)
+        const focusPosition    = {};   // slot → number (0–16384)
+
+        function getDeadZone(slot) {
+            if (!trackingDeadZone[slot]) trackingDeadZone[slot] = { left: 0.46, right: 0.54 };
+            return trackingDeadZone[slot];
+        }
+
+        // Convert client X on a cam-stream element to normalized image coordinate
+        function streamClientXToNorm(streamEl, clientX) {
+            const rect  = streamEl.getBoundingClientRect();
+            const img   = streamEl.querySelector('img');
+            const CW    = streamEl.clientWidth;
+            const CH    = streamEl.clientHeight;
+            const natW  = img.naturalWidth  || 1920;
+            const natH  = img.naturalHeight || 1080;
+            const scale = Math.min(CW / natW, CH / natH);
+            const rendW = natW * scale;
+            const offX  = (CW - rendW) / 2;
+            return ((clientX - rect.left) - offX) / rendW;
+        }
+
+        // Convert normalized image coordinate to client X on a cam-stream element
+        function normToStreamClientX(streamEl, norm) {
+            const rect  = streamEl.getBoundingClientRect();
+            const img   = streamEl.querySelector('img');
+            const CW    = streamEl.clientWidth;
+            const CH    = streamEl.clientHeight;
+            const natW  = img.naturalWidth  || 1920;
+            const natH  = img.naturalHeight || 1080;
+            const scale = Math.min(CW / natW, CH / natH);
+            const rendW = natW * scale;
+            const offX  = (CW - rendW) / 2;
+            return rect.left + offX + norm * rendW;
+        }
+
+        // Global dead zone drag state
+        let dzDrag = null; // { slot, side, streamEl }
+
+        document.addEventListener('mousemove', e => {
+            if (!dzDrag) return;
+            const dz   = getDeadZone(dzDrag.slot);
+            const norm = streamClientXToNorm(dzDrag.streamEl, e.clientX);
+            const MIN_WIDTH = 0.04;
+            if (dzDrag.side === 'left') {
+                dz.left = Math.max(0.01, Math.min(dz.right - MIN_WIDTH, norm));
+            } else {
+                dz.right = Math.min(0.99, Math.max(dz.left + MIN_WIDTH, norm));
+            }
+            trackingDeadZone[dzDrag.slot] = dz;
+            if (!trackingSettings[dzDrag.slot]) trackingSettings[dzDrag.slot] = {};
+            trackingSettings[dzDrag.slot].deadZone = { ...dz };
+            drawTrackingOverlay(dzDrag.slot, null, null);
+            saveCameras();
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (dzDrag) { dzDrag.streamEl.style.cursor = ''; dzDrag = null; }
+        });
+
+        function drawTrackingOverlay(slot, keypoints, box) {
+            const sec = document.querySelector(`.cam-section[data-slot="${slot}"]`);
+            if (!sec) return;
+            const canvas = sec.querySelector('.tracking-canvas');
+            if (!canvas) return;
+            const img = sec.querySelector('img');
+
+            // Get container dimensions from cam-stream for accurate canvas sizing
+            const stream = sec.querySelector('.cam-stream');
+            if (!stream) return;
+
+            // Prefer clientWidth/Height from img, fall back to stream, then fixed size
+            let CW = img.clientWidth;
+            let CH = img.clientHeight;
+            if (CW < 50 || CH < 50) {
+                CW = stream.clientWidth || 960;
+                CH = stream.clientHeight || 540;
+            }
+
+            // Set actual canvas buffer size
+            canvas.width = CW;
+            canvas.height = CH;
+
+            const ctx = canvas.getContext('2d', { willReadFrequently: false });
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Account for object-fit: contain letterboxing
+            // The image content may not fill the entire canvas
+            const natW = img.naturalWidth && img.naturalWidth > 0 ? img.naturalWidth : 1920;
+            const natH = img.naturalHeight && img.naturalHeight > 0 ? img.naturalHeight : 1080;
+            const scale   = Math.min(CW / natW, CH / natH);
+            const rendW   = natW * scale;
+            const rendH   = natH * scale;
+            const offX    = (CW - rendW) / 2;
+            const offY    = (CH - rendH) / 2;
+
+            // Map normalized coord (0-1 of natural image) → canvas pixel
+            const px = nx => offX + nx * rendW;
+            const py = ny => offY + ny * rendH;
+
+            // Dead zone band with draggable boundary lines
+            const dz = getDeadZone(slot);
+            const lx = px(dz.left), rx = px(dz.right);
+
+            // Semi-transparent fill between the two boundaries
+            ctx.fillStyle = 'rgba(255,255,255,0.08)';
+            ctx.fillRect(lx, offY, rx - lx, rendH);
+
+
+            // Dead zone box outline
+            ctx.strokeStyle = '#ffff00';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(lx, offY, rx - lx, rendH);
+
+            // Circle drag handles in the middle of each vertical side
+            const midY = offY + rendH / 2;
+            const R = 8;
+            [lx, rx].forEach(x => {
+                ctx.beginPath();
+                ctx.arc(x, midY, R, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffff00';
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            });
+            ctx.lineWidth = 2;
+
+            if (keypoints && keypoints.length > 0) {
+                ctx.fillStyle = 'rgba(255,255,0,0.25)';
+                for (const kp of keypoints) {
+                    const canvasX = px(kp.x);
+                    const canvasY = py(kp.y);
+                    ctx.beginPath();
+                    ctx.arc(canvasX, canvasY, 8, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        }
+
+        function clearTrackingOverlay(slot) {
+            // Redraw with no keypoints/box — keeps the center indicator visible
+            drawTrackingOverlay(slot, null, null);
+        }
+
+        function startTracking(slot) {
+            stopTracking(slot);
+            trackingActive[slot]  = true;
+            trackingLost[slot]    = false;
+            const sec = document.querySelector(`.cam-section[data-slot="${slot}"]`);
+            if (sec) sec.querySelector('.tracking-status').textContent = 'Tracking active.';
+            drawTrackingOverlay(slot, null, null);
+        }
+
+        function stopTracking(slot) {
+            trackingActive[slot] = false;
+            const ip = getSlotIp(slot);
+            if (ip) cgi(ip, '/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop');
+            clearTrackingOverlay(slot);
+            const sec = document.querySelector(`.cam-section[data-slot="${slot}"]`);
+            if (sec) sec.querySelector('.tracking-status').textContent = 'Tracking inactive.';
+        }
+
+        document.querySelectorAll('.layout-btn').forEach(btn => {
+            btn.addEventListener('click', () => setLayout(+btn.dataset.layout));
+        });
+
+        function setLayout(n) {
+            if (n > 1) {
+                // Settings tab not available in multi-camera view — reset any slots on it
+                Object.keys(sectionTabs).forEach(slot => {
+                    if (sectionTabs[slot] === 'settings' || sectionTabs[slot] === 'tracking') sectionTabs[slot] = 'ptz';
+                });
+            }
+            currentLayout = n;
+            const main = document.getElementById('main');
+            main.className = `layout-${n}`;
+
+            document.querySelectorAll('.layout-btn').forEach(btn => {
+                btn.classList.toggle('active', +btn.dataset.layout === n);
+            });
+
+            renderSections();
+            saveCameras();
+        }
+
+        // Track active tab per slot, camera per slot, and snapshot intervals
+        const sectionTabs      = {};
+        const sectionCameras   = {};   // slot → camera id
+        const sectionIntervals = {};   // slot → interval id
+        let selectedSlot       = null;
+        let presetNames        = {};   // { [camId]: { "1": "Name", ... } }
+
+        function updatePresetLabels(slot) {
+            const sec = document.querySelector(`.cam-section[data-slot="${slot}"]`);
+            if (!sec) return;
+            const camId = currentLayout === 1 ? stagingCamera : sectionCameras[slot];
+            const names = camId && presetNames[camId] ? presetNames[camId] : {};
+            sec.querySelectorAll('.preset-btn').forEach(btn => {
+                const n = btn.dataset.preset;
+                btn.textContent = names[n] || n;
+                btn.title = names[n] ? `Preset ${n}: ${names[n]}` : `Preset ${n}`;
+            });
+        }
+
+        function selectSlot(slot) {
+            selectedSlot = slot;
+            document.querySelectorAll('.cam-section').forEach(s =>
+                s.classList.toggle('selected', +s.dataset.slot === slot)
+            );
+            document.getElementById('camera-list').classList.add('assigning');
+            document.getElementById('assign-hint').classList.add('visible');
+        }
+
+        function clearSlotSelection() {
+            selectedSlot = null;
+            document.querySelectorAll('.cam-section').forEach(s => s.classList.remove('selected'));
+            document.getElementById('camera-list').classList.remove('assigning');
+            document.getElementById('assign-hint').classList.remove('visible');
+        }
+
+        function startSnapshot(ip, img, slot) {
+            stopSnapshot(slot);
+            let active = true;
+            sectionIntervals[slot] = { stop: () => { active = false; } };
+
+            const next = () => {
+                if (!active) return;
+                img.src = `/api/snapshot/${ip}?t=${Date.now()}`;
+            };
+
+            img.onload = () => {
+                if (!active) return;
+                // Always clear stale keypoints on new frame; worker will redraw with fresh data
+                drawTrackingOverlay(slot, null, null);
+                // Feed frame to tracking worker if enabled
+                if (trackingActive[slot] && trackingWorkers[slot]) {
+                    createImageBitmap(img).then(bitmap => {
+                        if (trackingActive[slot] && trackingWorkers[slot]) {
+                            const dz = getDeadZone(slot);
+                            trackingWorkers[slot].postMessage(
+                                { bitmap, width: img.naturalWidth || 1920, height: img.naturalHeight || 1080, maxSpeed: trackingMaxSpeed[slot] || 10, deadLeft: dz.left, deadRight: dz.right },
+                                [bitmap]
+                            );
+                        } else {
+                            bitmap.close();
+                        }
+                    }).catch(() => {});
+                }
+                next();
+            };
+            img.onerror = () => { if (active) setTimeout(next, 1000); };
+            next();
+        }
+
+        function stopSnapshot(slot) {
+            if (sectionIntervals[slot]) {
+                sectionIntervals[slot].stop();
+                delete sectionIntervals[slot];
+            }
+        }
+
+        function assignCameraToSlot(camId, slot) {
+            stopSnapshot(slot);
+            if (currentLayout === 1) {
+                stagingCamera = camId;
+                saveCameras();
+            } else {
+                sectionCameras[slot] = camId;
+                saveCameras();
+            }
+            const cam = cameras.find(c => c.id === camId);
+            const sec = document.querySelector(`.cam-section[data-slot="${slot}"]`);
+            if (!sec || !cam) { clearSlotSelection(); return; }
+
+            sec.classList.remove('no-camera');
+            updatePresetLabels(slot);
+            const img = sec.querySelector('img');
+            startSnapshot(cam.ip, img, slot);
+
+            // Set camera URL for backend tracker
+            fetch('/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cameraUrl: `http://${cam.ip}/snapshot.jpg`, cameraIp: cam.ip })
+            }).catch(e => console.warn('[Config] Failed to set camera:', e));
+
+            clearSlotSelection();
+        }
+
+        function renderSections() {
+            // Stop all snapshot intervals before clearing DOM
+            Object.keys(sectionIntervals).forEach(slot => stopSnapshot(slot));
+
+            const main = document.getElementById('main');
+            main.innerHTML = '';
+            sectionObserver.disconnect();
+
+            for (let i = 0; i < currentLayout; i++) {
+                const activeTab = sectionTabs[i] || 'ptz';
+                const sec = document.createElement('div');
+                const slotCamId = currentLayout === 1 ? stagingCamera : sectionCameras[i];
+                sec.className = 'cam-section' + (slotCamId ? '' : ' no-camera');
+                sec.dataset.slot = i;
+
+                sec.innerHTML = `
+                    <div class="cam-stream"><img alt=""><canvas class="tracking-canvas"></canvas><button class="slot-remove-btn" title="Remove camera from slot">✕</button></div>
+                    <span class="no-cam-hint">Click to select, then choose a camera</span>
+                    <div class="cam-controls">
+                        ${currentLayout === 1 ? `<div class="cam-tabs">
+                            <div class="cam-tab ${activeTab === 'ptz'      ? 'active' : ''}" data-tab="ptz">PTZ</div>
+                            <div class="cam-tab ${activeTab === 'settings' ? 'active' : ''}" data-tab="settings">Settings</div>
+                        </div>` : ''}
+                        <div class="cam-tab-content">
+                            <div class="tab-pane ${activeTab === 'ptz' ? 'active' : ''}" data-pane="ptz">
+                                <div class="ptz-wrap">
+                                    <div class="ptz-main">
+                                        <div class="dpad">
+                                            <button data-ptz="up">▲</button>
+                                            <button data-ptz="left">◀</button>
+                                            <button data-ptz="home" class="home"><svg viewBox="0 0 24 24" width="90%" height="90%" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg></button>
+                                            <button data-ptz="right">▶</button>
+                                            <button data-ptz="down">▼</button>
+                                        </div>
+                                    </div>
+                                    <div class="setting-row" style="padding: 4px 8px;">
+                                        <label style="flex-shrink:0;">Zoom</label>
+                                        <button class="nudge-btn" data-nudge="zoom" data-delta="-1000">−10</button>
+                                        <button class="nudge-btn" data-nudge="zoom" data-delta="-100">−</button>
+                                        <input type="range" class="zoom-slider" min="0" max="16384" value="0">
+                                        <button class="nudge-btn" data-nudge="zoom" data-delta="100">+</button>
+                                        <button class="nudge-btn" data-nudge="zoom" data-delta="1000">+10</button>
+                                    </div>
+                                    <div class="setting-row" style="padding: 4px 8px;">
+                                        <label style="flex-shrink:0;">Focus</label>
+                                        <button class="nudge-btn" data-nudge="focus" data-delta="-1000">−10</button>
+                                        <button class="nudge-btn" data-nudge="focus" data-delta="-10">−</button>
+                                        <input type="range" class="focus-slider" min="0" max="16384" value="8192">
+                                        <button class="nudge-btn" data-nudge="focus" data-delta="10">+</button>
+                                        <button class="nudge-btn" data-nudge="focus" data-delta="1000">+10</button>
+                                        <button class="af-btn" data-focus="auto">AF</button>
+                                    </div>
+                                    <div class="setting-row" style="padding: 4px 8px;">
+                                        <label style="flex-shrink:0;">PTZ Speed<span>8</span></label>
+                                        <input type="range" class="ptz-speed" min="1" max="24" value="8" style="flex:1;">
+                                    </div>
+                                    <div>
+                                        <div class="ptz-label">Presets — press to call, hold to set</div>
+                                        <div class="presets-grid">
+                                            ${[1,2,3,4,5,6,7,8,9].map(n => {
+                                                const camId = currentLayout === 1 ? stagingCamera : sectionCameras[i];
+                                                const name = camId && presetNames[camId] ? (presetNames[camId][n] || '') : '';
+                                                return `<button class="preset-btn" data-preset="${n}" title="${name ? `Preset ${n}: ${name}` : `Preset ${n}`}">${name || n}</button>`;
+                                            }).join('')}
+                                        </div>
+                                        <div class="preset-confirm">
+                                            <div class="preset-confirm-label">Set Preset <strong class="preset-confirm-num"></strong></div>
+                                            <input type="text" class="preset-confirm-name" placeholder="Name (optional)">
+                                            <div class="preset-confirm-btns">
+                                                <button class="preset-confirm-cancel">Cancel</button>
+                                                <button class="preset-confirm-ok">Set Preset</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="tracking-divider"></div>
+                                    <div class="tracking-inline">
+                                        <div class="tracking-toggle-row">
+                                            Auto-Tracking
+                                            <label class="toggle-switch">
+                                                <input type="checkbox" class="tracking-enable">
+                                                <span class="toggle-slider"></span>
+                                            </label>
+                                        </div>
+                                        <div class="tracking-inline-row tracking-lost-row">
+                                            <div class="tracking-section-label">On losing target</div>
+                                            <div class="radio-group radio-group-inline">
+                                                <label class="radio-row">
+                                                    <input type="radio" name="lost-${i}" value="stop" checked> Stop
+                                                </label>
+                                                <label class="radio-row">
+                                                    <input type="radio" name="lost-${i}" value="preset"> Call preset <input type="number" class="preset-num" value="1" min="1" max="255">
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div class="tracking-inline-row">
+                                            <div class="setting-row setting-row-inline">
+                                                <label style="flex-shrink:0;">Speed<span>10</span></label>
+                                                <input type="range" class="max-speed" min="1" max="24" value="10" style="flex:1;">
+                                            </div>
+                                        </div>
+                                        <div class="tracking-status">Tracking inactive.</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="tab-pane ${activeTab === 'settings' ? 'active' : ''}" data-pane="settings">
+                                <div class="settings-reset-row">
+                                    <div class="settings-reset-confirm">
+                                        Reset all to defaults?
+                                        <button class="settings-reset-confirm-yes">Reset</button>
+                                        <button class="settings-reset-confirm-no">Cancel</button>
+                                    </div>
+                                    <button class="settings-reset-btn">Reset to defaults</button>
+                                </div>
+                                <div class="settings-inner-tabs">
+                                    <div class="settings-inner-tab active" data-stab="image">Image</div>
+                                    <div class="settings-inner-tab" data-stab="exposure">Exposure</div>
+                                    <div class="settings-inner-tab" data-stab="color">Color</div>
+                                </div>
+
+                                <!-- Image -->
+                                <div class="settings-inner-pane active" data-spane="image">
+                                    ${[
+                                        { p:'bright',      label:'Brightness',          min:0, max:14, val:7 },
+                                        { p:'saturation',  label:'Saturation',           min:0, max:14, val:7 },
+                                        { p:'contrast',    label:'Contrast',             min:0, max:14, val:7 },
+                                        { p:'sharpness',   label:'Sharpness',            min:0, max:11, val:6 },
+                                        { p:'hue',         label:'Hue',                  min:0, max:14, val:7 },
+                                        { p:'nr3d',        label:'3D Noise Reduction',   min:0, max:8,  val:4 },
+                                        { p:'nr2d',        label:'2D Noise Reduction',   min:0, max:3,  val:1 },
+                                    ].map(s => `<div class="setting-row"><label>${s.label}<span>${s.val}</span></label><input type="range" data-setting="${s.p}" min="${s.min}" max="${s.max}" value="${s.val}"></div>`).join('')}
+                                    <div class="setting-row"><label>Gamma</label>
+                                        <select class="setting-select" data-setting="style">
+                                            <option value="0">Default</option>
+                                            <option value="1">0.45</option>
+                                            <option value="2">0.50</option>
+                                            <option value="3">0.56</option>
+                                            <option value="4">0.63</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <!-- Exposure -->
+                                <div class="settings-inner-pane" data-spane="exposure">
+                                    <div class="setting-row"><label>AE Mode</label>
+                                        <select class="setting-select" data-setting="exposure_mode">
+                                            <option value="0">Auto</option>
+                                            <option value="13">Bright</option>
+                                            <option value="3">Manual</option>
+                                            <option value="10">SAE</option>
+                                            <option value="11">AAE</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-row"><label>Shutter</label>
+                                        <select class="setting-select" data-setting="shutter">
+                                            ${['1/30','1/60','1/90','1/100','1/125','1/180','1/250','1/350','1/500','1/725','1/1000','1/1500','1/2000','1/3000','1/4000','1/6000','1/10000'].map((v,i)=>`<option value="${i}">${v}</option>`).join('')}
+                                        </select>
+                                    </div>
+                                    <div class="setting-row"><label>Iris</label>
+                                        <select class="setting-select" data-setting="iris">
+                                            ${['Close','F11','F9.6','F8.0','F6.8','F5.6','F4.8','F4.0','F3.4','F2.8','F2.4','F2.0','F1.8'].map((v,i)=>`<option value="${i}">${v}</option>`).join('')}
+                                        </select>
+                                    </div>
+                                    ${[
+                                        { p:'gain_limit',   label:'Gain Limit',   min:0, max:15, val:7 },
+                                        { p:'manual_gain',  label:'Manual Gain',  min:0, max:7,  val:0 },
+                                        { p:'drc',          label:'DRC',          min:0, max:8,  val:3 },
+                                        { p:'expcomp_level',label:'Exp Comp',     min:0, max:14, val:7 },
+                                    ].map(s => `<div class="setting-row"><label>${s.label}<span>${s.val}</span></label><input type="range" data-setting="${s.p}" min="${s.min}" max="${s.max}" value="${s.val}"></div>`).join('')}
+                                    <div class="setting-row"><label>Anti-Flicker</label>
+                                        <select class="setting-select" data-setting="antiflicker">
+                                            <option value="0">Off</option>
+                                            <option value="1">50Hz</option>
+                                            <option value="2">60Hz</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-row"><label>Meter Mode</label>
+                                        <select class="setting-select" data-setting="meter">
+                                            <option value="0">Average</option>
+                                            <option value="1">Center-Weighted</option>
+                                            <option value="2">Smart</option>
+                                            <option value="3">Top</option>
+                                        </select>
+                                    </div>
+                                    <div class="setting-row setting-row-inline">
+                                        <label>Exp Comp Enable</label>
+                                        <label class="toggle-switch"><input type="checkbox" data-setting="expcomp_mode"><span class="toggle-slider"></span></label>
+                                    </div>
+                                    <div class="setting-row setting-row-inline">
+                                        <label>Backlight</label>
+                                        <label class="toggle-switch"><input type="checkbox" data-setting="backlight"><span class="toggle-slider"></span></label>
+                                    </div>
+                                </div>
+
+                                <!-- Color -->
+                                <div class="settings-inner-pane" data-spane="color">
+                                    <div class="setting-row"><label>WB Mode</label>
+                                        <select class="setting-select" data-setting="wb_mode">
+                                            <option value="0">Auto</option>
+                                            <option value="1">Indoor</option>
+                                            <option value="2">Outdoor</option>
+                                            <option value="3">One Push WB</option>
+                                            <option value="5">Manual</option>
+                                            <option value="20">Temperature</option>
+                                        </select>
+                                    </div>
+                                    ${[
+                                        { p:'rgain_tuning', label:'Red Tuning',  min:0, max:20, val:10 },
+                                        { p:'bgain_tuning', label:'Blue Tuning', min:0, max:20, val:10 },
+                                        { p:'rgain',        label:'Red Gain',   min:0, max:255, val:128 },
+                                        { p:'bgain',        label:'Blue Gain',  min:0, max:255, val:128 },
+                                    ].map(s => `<div class="setting-row"><label>${s.label}<span>${s.val}</span></label><input type="range" data-setting="${s.p}" min="${s.min}" max="${s.max}" value="${s.val}"></div>`).join('')}
+                                    <div class="setting-row"><label>AWB Sensitivity</label>
+                                        <select class="setting-select" data-setting="awb_sensitivity">
+                                            <option value="0">High</option>
+                                            <option value="1">Normal</option>
+                                            <option value="2">Low</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="iec-wrap">
+                                    <div class="iec-section-label">IEC Profiles</div>
+                                    <div class="iec-input-row">
+                                        <input type="text" class="iec-name-input" placeholder="Profile name">
+                                        <button class="iec-save-btn">Save</button>
+                                    </div>
+                                    <div class="iec-profile-list"></div>
+                                    <div class="iec-section-label">Apply to presets</div>
+                                    <div class="iec-input-row">
+                                        <input type="text" class="iec-presets-input" placeholder="e.g. 1-5, 4, 3">
+                                        <button class="iec-apply-btn">Apply</button>
+                                    </div>
+                                    <div class="iec-status"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // Remove camera from slot button
+                sec.querySelector('.slot-remove-btn').addEventListener('click', e => {
+                    e.stopPropagation();
+                    removeCameraFromSlot(i);
+                });
+
+                // Select section on click
+                sec.addEventListener('click', e => {
+                    if (e.target.closest('.cam-tab')) return;
+                    if (currentLayout === 1 ? stagingCamera : sectionCameras[i]) { clearSlotSelection(); return; }
+                    if (e.target.closest('.cam-controls')) return;
+                    if (selectedSlot === i) { clearSlotSelection(); return; }
+                    selectSlot(i);
+                });
+
+                // Tab switching
+                sec.querySelectorAll('.cam-tab').forEach(tab => {
+                    tab.addEventListener('click', () => {
+                        const name = tab.dataset.tab;
+                        sectionTabs[i] = name;
+                        sec.querySelectorAll('.cam-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+                        sec.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === name));
+                    });
+                });
+
+                // ── PTZ wiring ─────────────────────────────────
+                const getIp = () => getSlotIp(i);
+
+                // D-pad: mousedown starts move, mouseup/mouseleave stops
+                sec.querySelectorAll('[data-ptz]').forEach(btn => {
+                    const dir = btn.dataset.ptz;
+                    if (dir === 'home') {
+                        btn.addEventListener('click', () => {
+                            const ip = getIp(); if (!ip) return;
+                            cgi(ip, '/cgi-bin/ptzctrl.cgi?ptzcmd&home');
+                        });
+                        return;
+                    }
+                    const getPtzSpeed = () => parseInt(sec.querySelector('.ptz-speed')?.value || 8);
+                    let ptzPressed = false;
+                    const start = () => {
+                        const ip = getIp(); if (!ip) return;
+                        ptzPressed = true; const spd = getPtzSpeed(); activeMove = { ip, cmd: 'ptzstop' };
+                        cgi(ip, `/cgi-bin/ptzctrl.cgi?ptzcmd&${dir}&${spd}&${spd}`);
+                        activeInterval = setInterval(() => cgi(ip, `/cgi-bin/ptzctrl.cgi?ptzcmd&${dir}&${spd}&${spd}`), 300);
+                    };
+                    const stop = () => {
+                        if (!ptzPressed) return;
+                        const ip = getIp(); if (!ip) return;
+                        ptzPressed = false; activeMove = null;
+                        clearInterval(activeInterval); activeInterval = null;
+                        cgi(ip, '/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop');
+                        setTimeout(() => cgi(ip, '/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop'), 150);
+                    };
+                    btn.addEventListener('mousedown', start);
+                    btn.addEventListener('mouseup',   stop);
+                    btn.addEventListener('contextmenu', e => e.preventDefault());
+                    btn.addEventListener('touchstart', e => {
+                        e.preventDefault();
+                        btn.classList.add('pressed');
+                        start();
+                    });
+                    btn.addEventListener('touchend',   e => {
+                        e.preventDefault();
+                        btn.classList.remove('pressed');
+                        stop();
+                    });
+                    btn.addEventListener('touchcancel', () => {
+                        btn.classList.remove('pressed');
+                        stop();
+                    });
+                    document.addEventListener('mouseup', stop);
+                    document.addEventListener('touchend', stop);
+                    btn.addEventListener('mouseleave', () => { if (ptzPressed) stop(); });
+                });
+
+                // Zoom slider (VISCA direct)
+                const zoomSlider = sec.querySelector('.zoom-slider');
+                if (zoomSlider) {
+                    zoomSlider.value = zoomPosition[i] ?? 0;
+                    let zoomTimer = null;
+                    zoomSlider.addEventListener('input', () => {
+                        const ip = getIp(); if (!ip) return;
+                        const pos = +zoomSlider.value;
+                        zoomPosition[i] = pos;
+                        clearTimeout(zoomTimer);
+                        zoomTimer = setTimeout(() => {
+                            saveCameras();
+                            fetch('/api/visca', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ ip, type: 'zoom', position: pos }) });
+                        }, 80);
+                    });
+                    sec.querySelectorAll('[data-nudge="zoom"]').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            zoomSlider.value = Math.max(0, Math.min(16384, +zoomSlider.value + +btn.dataset.delta));
+                            zoomSlider.dispatchEvent(new Event('input'));
+                        });
+                    });
+                }
+
+                // Focus slider (VISCA direct) + AF button
+                const focusSlider = sec.querySelector('.focus-slider');
+                if (focusSlider) {
+                    focusSlider.value = focusPosition[i] ?? 8192;
+                    let focusTimer = null;
+                    focusSlider.addEventListener('input', () => {
+                        const ip = getIp(); if (!ip) return;
+                        const pos = +focusSlider.value;
+                        focusPosition[i] = pos;
+                        clearTimeout(focusTimer);
+                        focusTimer = setTimeout(() => {
+                            saveCameras();
+                            fetch('/api/visca', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ ip, type: 'focus', position: pos }) });
+                        }, 80);
+                    });
+                    sec.querySelectorAll('[data-nudge="focus"]').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            focusSlider.value = Math.max(0, Math.min(16384, +focusSlider.value + +btn.dataset.delta));
+                            focusSlider.dispatchEvent(new Event('input'));
+                        });
+                    });
+                }
+
+                const afBtn = sec.querySelector('.af-btn');
+                if (afBtn) {
+                    afBtn.classList.toggle('af-on', !!afState[i]);
+                    afBtn.addEventListener('click', () => {
+                        const ip = getIp(); if (!ip) return;
+                        const on = afBtn.classList.toggle('af-on');
+                        afState[i] = on;
+                        saveCameras();
+                        cgi(ip, on ? '/cgi-bin/param.cgi?ptzcmd&unlock_mfocus' : '/cgi-bin/param.cgi?ptzcmd&lock_mfocus');
+                    });
+                }
+
+                // Presets: click = call, hold 600ms = set
+                const confirmDiv      = sec.querySelector('.preset-confirm');
+                const confirmNum      = sec.querySelector('.preset-confirm-num');
+                const confirmNameInput = sec.querySelector('.preset-confirm-name');
+
+                const showPresetConfirm = (n) => {
+                    const camId = currentLayout === 1 ? stagingCamera : sectionCameras[i];
+                    confirmNum.textContent = n;
+                    confirmNameInput.value = (camId && presetNames[camId]?.[n]) || '';
+                    confirmDiv.dataset.pendingPreset = n;
+                    confirmDiv.classList.add('visible');
+                    confirmNameInput.focus();
+                };
+
+                sec.querySelector('.preset-confirm-cancel').addEventListener('click', () => {
+                    confirmDiv.classList.remove('visible');
+                });
+
+                sec.querySelector('.preset-confirm-ok').addEventListener('click', async () => {
+                    const n  = confirmDiv.dataset.pendingPreset;
+                    const ip = getIp();
+                    confirmDiv.classList.remove('visible');
+                    if (!ip) return;
+                    await cgi(ip, `/cgi-bin/ptzctrl.cgi?ptzcmd&posset&${n}`);
+                    const name  = confirmNameInput.value.trim();
+                    const camId = currentLayout === 1 ? stagingCamera : sectionCameras[i];
+                    if (camId) {
+                        if (!presetNames[camId]) presetNames[camId] = {};
+                        if (name) presetNames[camId][n] = name;
+                        else delete presetNames[camId][n];
+                        updatePresetLabels(i);
+                        saveCameras();
+                    }
+                });
+
+                confirmNameInput.addEventListener('keydown', e => {
+                    if (e.key === 'Enter')  sec.querySelector('.preset-confirm-ok').click();
+                    if (e.key === 'Escape') sec.querySelector('.preset-confirm-cancel').click();
+                });
+
+                sec.querySelectorAll('.preset-btn').forEach(btn => {
+                    const n = btn.dataset.preset;
+                    let holdTimer = null;
+                    const startPress = () => {
+                        btn.classList.add('pressed');
+                        holdTimer = setTimeout(() => {
+                            holdTimer = null;
+                            btn.classList.add('holding');
+                            setTimeout(() => btn.classList.remove('holding'), 400);
+                            showPresetConfirm(n);
+                        }, 600);
+                    };
+                    const endPress = () => {
+                        btn.classList.remove('pressed');
+                        if (holdTimer) {
+                            clearTimeout(holdTimer);
+                            holdTimer = null;
+                            const ip = getIp(); if (!ip) return;
+                            cgi(ip, `/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&${n}`);
+                        }
+                    };
+                    const cancelPress = () => {
+                        btn.classList.remove('pressed');
+                        if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+                    };
+                    btn.addEventListener('mousedown', startPress);
+                    btn.addEventListener('mouseup', endPress);
+                    btn.addEventListener('mouseleave', cancelPress);
+                    btn.addEventListener('contextmenu', e => e.preventDefault());
+                    btn.addEventListener('touchstart', e => { e.preventDefault(); startPress(); });
+                    btn.addEventListener('touchend', e => { e.preventDefault(); endPress(); });
+                    btn.addEventListener('touchcancel', cancelPress);
+                });
+
+                // ── Settings inner tab switching ───────────────
+                sec.querySelectorAll('.settings-inner-tab').forEach(stab => {
+                    stab.addEventListener('click', () => {
+                        const name = stab.dataset.stab;
+                        sec.querySelectorAll('.settings-inner-tab').forEach(t => t.classList.toggle('active', t.dataset.stab === name));
+                        sec.querySelectorAll('.settings-inner-pane').forEach(p => p.classList.toggle('active', p.dataset.spane === name));
+                        if (name === 'exposure' || name === 'color') {
+                            loadImageSettings();
+                        }
+                    });
+                });
+
+                // ── Settings wiring ────────────────────────────
+                // Parse key="value" or key=value lines from CGI response
+                const parseConf = text => {
+                    const vals = {};
+                    text.split(/[\r\n]+/).forEach(line => {
+                        const m = line.match(/(\w+)\s*=\s*"?([^"\s]*)"?/);
+                        if (m) vals[m[1]] = m[2];
+                    });
+                    return vals;
+                };
+
+                const applyValsToControls = vals => {
+                    sec.querySelectorAll('[data-setting]').forEach(el => {
+                        const key = el.dataset.setting;
+                        if (vals[key] === undefined) return;
+                        const v = vals[key];
+                        if (el.type === 'checkbox') {
+                            el.checked = v !== '0' && v !== 'false';
+                        } else {
+                            el.value = v;
+                            const span = el.closest('.setting-row')?.querySelector('label span');
+                            if (span) span.textContent = v;
+                        }
+                    });
+                };
+
+                // ── VISCA raw helper ───────────────────────────
+                const viscaRaw = async (cmd) => {
+                    const ip = getIp(); if (!ip) return null;
+                    try {
+                        const r = await fetch(`/api/visca-raw/${ip}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ cmd })
+                        });
+                        if (!r.ok) return null;
+                        const d = await r.json();
+                        return d.resp || null; // array of bytes
+                    } catch { return null; }
+                };
+
+                // Decode a 4-nibble VISCA direct value from inquiry response bytes
+                // Response format for direct-value inquiries: 90 50 0p 0q 0r 0s FF
+                // returns (p<<12)|(q<<8)|(r<<4)|s
+                const decodeNibbles = resp => {
+                    if (!resp || resp.length < 7) return null;
+                    return ((resp[2] & 0xF) << 12) | ((resp[3] & 0xF) << 8) | ((resp[4] & 0xF) << 4) | (resp[5] & 0xF);
+                };
+
+                // Decode a 2-nibble VISCA value (90 50 0p 0q FF) → (p<<4)|q
+                const decodeNibbles2 = resp => {
+                    if (!resp || resp.length < 5) return null;
+                    return ((resp[2] & 0xF) << 4) | (resp[3] & 0xF);
+                };
+
+                // Decode single-nibble value at byte[2] (90 50 0p FF)
+                const decodeByte = resp => {
+                    if (!resp || resp.length < 4) return null;
+                    return resp[2] & 0xF;
+                };
+
+                const base64ToBytes = (str) => {
+                    if (typeof str !== 'string') return str; // already bytes
+                    try {
+                        return new Uint8Array(atob(str).split('').map(c => c.charCodeAt(0)));
+                    } catch {
+                        return null;
+                    }
+                };
+
+                const loadImageSettings = async () => {
+                    const ip = getIp(); if (!ip) return;
+
+                    // Fire all VISCA inquiries in parallel
+                    const rawResponses = await Promise.all([
+                        viscaRaw([0x81,0x09,0x04,0x35,0xFF]),  // WB mode
+                        viscaRaw([0x81,0x09,0x04,0x43,0xFF]),  // R Gain
+                        viscaRaw([0x81,0x09,0x04,0x44,0xFF]),  // B Gain
+                        viscaRaw([0x81,0x09,0x04,0x12,0xFF]),  // R Tuning
+                        viscaRaw([0x81,0x09,0x04,0x13,0xFF]),  // B Tuning
+                        viscaRaw([0x81,0x09,0x04,0x39,0xFF]),  // AE mode
+                        viscaRaw([0x81,0x09,0x04,0x4A,0xFF]),  // Shutter → 90 50 0p 0q FF
+                        viscaRaw([0x81,0x09,0x04,0x4B,0xFF]),  // Iris    → 90 50 0p 0q FF
+                        viscaRaw([0x81,0x09,0x04,0x4C,0xFF]),  // Gain    → 90 50 0p 0q FF
+                        viscaRaw([0x81,0x09,0x04,0x3E,0xFF]),  // ExpComp on/off
+                        viscaRaw([0x81,0x09,0x04,0x4E,0xFF]),  // ExpComp level
+                        viscaRaw([0x81,0x09,0x04,0x33,0xFF]),  // Backlight
+                        viscaRaw([0x81,0x09,0x04,0x55,0xFF]),  // Flicker inquiry
+                        viscaRaw([0x81,0x09,0x04,0x42,0xFF]),  // Sharpness
+                        viscaRaw([0x81,0x09,0x04,0x49,0xFF]),  // Color Gain
+                        viscaRaw([0x81,0x09,0x04,0x4F,0xFF]),  // Hue
+                        viscaRaw([0x81,0x09,0x04,0xA1,0xFF]),  // Brightness
+                        viscaRaw([0x81,0x09,0x04,0xA2,0xFF]),  // Contrast
+                        viscaRaw([0x81,0x09,0x04,0xA9,0xFF]),  // AWB Sensitivity
+                        viscaRaw([0x81,0x09,0x04,0x53,0xFF]),  // NR2D → 90 50 0p FF
+                        viscaRaw([0x81,0x09,0x04,0x54,0xFF]),  // NR3D → 90 50 0p FF
+                        viscaRaw([0x81,0x09,0x04,0x2C,0xFF]),  // Gain Limit → 90 50 0q FF
+                    ]);
+
+                    // Decode base64 responses to byte arrays
+                    const [
+                        wbResp, rGainResp, bGainResp,
+                        rTuningResp, bTuningResp,
+                        aeResp, shutResp, irisResp, gainResp,
+                        expCompOnResp, expCompLvlResp,
+                        backlightResp, flickerResp,
+                        sharpResp, colorGainResp, hueResp,
+                        brightResp, contrastResp, awbSensResp,
+                        nr2dResp, nr3dResp, gainLimitResp
+                    ] = rawResponses.map(base64ToBytes);
+
+                    const vals = {};
+                    const b = (r, i) => r && r.length > i ? r[i] & 0xF : null;
+                    // 2-nibble value at bytes [2][3]: (p<<4)|q
+                    const n2 = (r) => r && r.length >= 5 ? ((r[2]&0xF)<<4)|(r[3]&0xF) : null;
+                    // 2-nibble value at bytes [4][5]
+                    const n2hi = (r) => r && r.length >= 7 ? ((r[4]&0xF)<<4)|(r[5]&0xF) : null;
+
+                    // WB mode: 90 50 0p FF
+                    const wm = b(wbResp, 2); if (wm !== null) vals.wb_mode = String(wm);
+
+                    // R/B Gain: 90 50 00 00 0p 0q FF → pq byte = 0–255
+                    const rg = n2hi(rGainResp); if (rg !== null) vals.rgain = String(rg);
+                    const bg = n2hi(bGainResp); if (bg !== null) vals.bgain = String(bg);
+
+                    // R/B Tuning: 90 50 00 00 0p 0q FF → 0x00–0x14 (slider 0–20)
+                    const rt = n2hi(rTuningResp); if (rt !== null) vals.rgain_tuning = String(rt);
+                    const bt = n2hi(bTuningResp); if (bt !== null) vals.bgain_tuning = String(bt);
+
+                    // AE mode: 90 50 0p FF
+                    const ae = b(aeResp, 2); if (ae !== null) vals.exposure_mode = String(ae);
+
+                    // Shutter/Iris/Gain: 90 50 00 00 0p 0q FF → (p<<4)|q at bytes [4][5]
+                    const sh = n2hi(shutResp); if (sh !== null) vals.shutter = String(sh);
+                    const ir = n2hi(irisResp); if (ir !== null) vals.iris = String(ir);
+                    const gn = b(gainResp, 5); if (gn !== null) vals.manual_gain = String(gn);
+
+                    // ExpComp: 90 50 0p FF (02=on)
+                    const ec = b(expCompOnResp, 2); if (ec !== null) vals.expcomp_mode = ec === 2 ? '1' : '0';
+                    const el = n2hi(expCompLvlResp); if (el !== null) vals.expcomp_level = String(el);
+
+                    // Backlight: 90 50 0p FF (02=on)
+                    const bl = b(backlightResp, 2); if (bl !== null) vals.backlight = bl === 2 ? '1' : '0';
+
+                    // Flicker: 90 50 0p FF
+                    const fl = b(flickerResp, 2); if (fl !== null) vals.antiflicker = String(fl);
+
+                    // Sharpness: 90 50 00 00 0p 0q FF
+                    const sp = n2hi(sharpResp); if (sp !== null) vals.sharpness = String(sp);
+
+                    // Color Gain (saturation): 90 50 00 00 00 0p FF — last nibble 0–14
+                    const cg = b(colorGainResp, 5); if (cg !== null) vals.saturation = String(cg);
+
+                    // Hue: 90 50 00 00 00 0p FF
+                    const hu = b(hueResp, 5); if (hu !== null) vals.hue = String(hu);
+
+                    // Brightness/Contrast: 90 50 00 00 0p 0q FF
+                    const br = n2hi(brightResp); if (br !== null) vals.bright = String(br);
+                    const co = n2hi(contrastResp); if (co !== null) vals.contrast = String(co);
+
+                    // AWB Sensitivity: 90 50 0p FF
+                    const as = b(awbSensResp, 2); if (as !== null) vals.awb_sensitivity = String(as);
+
+                    // NR2D/NR3D: 90 50 0p FF
+                    const n2d = b(nr2dResp, 2); if (n2d !== null) vals.nr2d = String(n2d);
+                    const n3d = b(nr3dResp, 2); if (n3d !== null) vals.nr3d = String(n3d);
+
+                    // Gain Limit: 90 50 0q FF (byte 3)
+                    const gl = b(gainLimitResp, 3); if (gl !== null) vals.gain_limit = String(gl);
+
+                    applyValsToControls(vals);
+
+                    // CGI fallback for gamma/style, drc, meter (no VISCA equivalent)
+                    try {
+                        const [adv, basic] = await Promise.all([
+                            fetch(`/api/cgi/${ip}?q=${encodeURIComponent('/cgi-bin/param.cgi?get_advance_image_conf')}`).then(r => r.text()),
+                            fetch(`/api/cgi/${ip}?q=${encodeURIComponent('/cgi-bin/param.cgi?get_image_conf')}`).then(r => r.text()),
+                        ]);
+                        const cgiVals = { ...parseConf(adv), ...parseConf(basic) };
+                        const viscaKeys = new Set(Object.keys(vals));
+                        const cgiOnly = Object.fromEntries(Object.entries(cgiVals).filter(([k]) => !viscaKeys.has(k)));
+                        applyValsToControls(cgiOnly);
+                    } catch(e) {}
+                };
+
+                // Sliders: update display live, write on release
+                sec.querySelectorAll('[data-setting][type="range"]').forEach(input => {
+                    input.addEventListener('input', () => {
+                        const span = input.closest('.setting-row')?.querySelector('label span');
+                        if (span) span.textContent = input.value;
+                    });
+                    input.addEventListener('change', () => {
+                        const ip = getIp(); if (!ip) return;
+                        postSetting(ip, input.dataset.setting, input.value);
+                    });
+                });
+
+                // Selects: write on change
+                sec.querySelectorAll('.setting-select[data-setting]').forEach(sel => {
+                    sel.addEventListener('change', () => {
+                        const ip = getIp(); if (!ip) return;
+                        postSetting(ip, sel.dataset.setting, sel.value);
+                    });
+                });
+
+                // Checkboxes: write on change (1/0)
+                sec.querySelectorAll('[data-setting][type="checkbox"]').forEach(cb => {
+                    cb.addEventListener('change', () => {
+                        const ip = getIp(); if (!ip) return;
+                        postSetting(ip, cb.dataset.setting, cb.checked ? 1 : 0);
+                    });
+                });
+
+                // ── Reset to defaults ──────────────────────────
+                const settingsDefaults = {
+                    // ranges (data-setting: default value)
+                    bright:        7,
+                    saturation:    7,
+                    contrast:      7,
+                    sharpness:     6,
+                    hue:           7,
+                    nr3d:          4,
+                    nr2d:          1,
+                    gain_limit:    7,
+                    manual_gain:   0,
+                    drc:           3,
+                    expcomp_level: 7,
+                    rgain_tuning:  10,
+                    bgain_tuning:  10,
+                    rgain:         128,
+                    bgain:         128,
+                    // selects
+                    style:         '0',
+                    exposure_mode: '0',
+                    shutter:       '0',
+                    iris:          '0',
+                    antiflicker:   '0',
+                    meter:         '0',
+                    wb_mode:       '0',
+                    awb_sensitivity: '1',
+                    // checkboxes
+                    expcomp_mode:  false,
+                    backlight:     false,
+                };
+
+                const resetBtn     = sec.querySelector('.settings-reset-btn');
+                const resetConfirm = sec.querySelector('.settings-reset-confirm');
+                const resetYes     = sec.querySelector('.settings-reset-confirm-yes');
+                const resetNo      = sec.querySelector('.settings-reset-confirm-no');
+
+                resetBtn.addEventListener('click', () => {
+                    resetBtn.style.display = 'none';
+                    resetConfirm.classList.add('visible');
+                });
+                resetNo.addEventListener('click', () => {
+                    resetConfirm.classList.remove('visible');
+                    resetBtn.style.display = '';
+                });
+                resetYes.addEventListener('click', async () => {
+                    resetConfirm.classList.remove('visible');
+                    resetBtn.style.display = '';
+                    const ip = getIp(); if (!ip) return;
+
+                    // Apply defaults to UI controls
+                    sec.querySelectorAll('[data-setting]').forEach(el => {
+                        const key = el.dataset.setting;
+                        if (!(key in settingsDefaults)) return;
+                        const def = settingsDefaults[key];
+                        if (el.type === 'checkbox') {
+                            el.checked = !!def;
+                        } else {
+                            el.value = def;
+                            const span = el.closest('.setting-row')?.querySelector('label span');
+                            if (span) span.textContent = def;
+                        }
+                    });
+
+                    // Send all defaults to camera
+                    for (const [key, val] of Object.entries(settingsDefaults)) {
+                        const cgiVal = typeof val === 'boolean' ? (val ? 1 : 0) : val;
+                        await postSetting(ip, key, cgiVal);
+                    }
+                });
+
+                // ── IEC Profiles wiring ────────────────────────
+
+                // Route a single setting key+value to VISCA (preferred) or CGI fallback
+                const postSetting = async (ip, key, val) => {
+                    const v = +val;
+
+                    // Helper: build direct-set nibble packet (81 01 04 XX 00 00 0p 0q FF)
+                    const nibs = (sub, n16) => {
+                        const n = n16 & 0xFFFF;
+                        return [0x81,0x01,0x04,sub,0x00,0x00,(n>>4)&0xF,n&0xF,0xFF];
+                    };
+                    const nibsFull = (sub, n16) => {
+                        const n = n16 & 0xFFFF;
+                        return [0x81,0x01,0x04,sub,(n>>12)&0xF,(n>>8)&0xF,(n>>4)&0xF,n&0xF,0xFF];
+                    };
+
+                    const send = cmd => fetch(`/api/visca-raw/${ip}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ cmd })
+                    });
+
+                    switch (key) {
+                        case 'wb_mode':
+                            // 81 01 04 35 0p FF
+                            return send([0x81,0x01,0x04,0x35,v&0xF,0xFF]);
+                        case 'rgain':
+                            return send(nibs(0x43, v));
+                        case 'bgain':
+                            return send(nibs(0x44, v));
+                        case 'exposure_mode':
+                            // 81 01 04 39 0p FF
+                            return send([0x81,0x01,0x04,0x39,v&0xF,0xFF]);
+                        case 'shutter':
+                            return send(nibs(0x4A, v));
+                        case 'iris':
+                            return send(nibs(0x4B, v));
+                        case 'manual_gain':
+                            return send(nibs(0x4C, v));
+                        case 'expcomp_mode':
+                            // 81 01 04 3E 02/03 FF
+                            return send([0x81,0x01,0x04,0x3E,v ? 0x02 : 0x03,0xFF]);
+                        case 'expcomp_level':
+                            return send(nibs(0x4E, v));
+                        case 'backlight':
+                            return send([0x81,0x01,0x04,0x33,v ? 0x02 : 0x03,0xFF]);
+                        case 'antiflicker':
+                            // 81 01 04 23 0p FF
+                            return send([0x81,0x01,0x04,0x23,v&0xF,0xFF]);
+                        case 'sharpness':
+                            return send(nibs(0x42, v));
+                        case 'saturation':
+                            // Color Gain: 81 01 04 49 00 00 00 0p FF
+                            return send([0x81,0x01,0x04,0x49,0x00,0x00,0x00,v&0xF,0xFF]);
+                        case 'hue':
+                            return send([0x81,0x01,0x04,0x4F,0x00,0x00,0x00,v&0xF,0xFF]);
+                        case 'bright':
+                            return send(nibs(0xA1, v));
+                        case 'contrast':
+                            return send(nibs(0xA2, v));
+                        case 'awb_sensitivity':
+                            // 81 01 04 A9 0p FF
+                            return send([0x81,0x01,0x04,0xA9,v&0xF,0xFF]);
+                        case 'rgain_tuning':
+                            // CAM_RTuning: 81 0A 01 12 pq FF — pq is single byte 0x00–0x14
+                            return send([0x81,0x0A,0x01,0x12,v&0xFF,0xFF]);
+                        case 'bgain_tuning':
+                            return send([0x81,0x0A,0x01,0x13,v&0xFF,0xFF]);
+                        // CGI-only fallbacks
+                        case 'style':
+                            return cgi(ip, `/cgi-bin/param.cgi?post_image_value&style&${val}`);
+                        case 'nr2d':
+                            return cgi(ip, `/cgi-bin/param.cgi?post_image_value&nr2d_level&${val}`);
+                        case 'nr3d':
+                            return cgi(ip, `/cgi-bin/param.cgi?post_image_value&nr3d_level&${val}`);
+                        case 'drc':
+                            return cgi(ip, `/cgi-bin/param.cgi?post_image_value&drc_level&${val}`);
+                        case 'gain_limit':
+                        case 'meter':
+                            return cgi(ip, `/cgi-bin/param.cgi?post_image_value&${key}&${val}`);
+                        default:
+                            return cgi(ip, `/cgi-bin/param.cgi?post_image_value&${key}&${val}`);
+                    }
+                };
+
+                const readSettings = () => {
+                    const s = {};
+                    sec.querySelectorAll('[data-setting]').forEach(el => {
+                        if (el.type === 'checkbox') s[el.dataset.setting] = el.checked ? 1 : 0;
+                        else s[el.dataset.setting] = el.value;
+                    });
+                    return s;
+                };
+
+                const iecStatus = sec.querySelector('.iec-status');
+
+                const loadIECProfiles = async () => {
+                    const listEl = sec.querySelector('.iec-profile-list');
+                    try {
+                        // IEC profiles endpoints not yet implemented in backend
+                        return;
+                        const profiles = await fetch('/api/iec-profiles').then(r => r.json());
+                        listEl.innerHTML = '';
+                        const names = Object.keys(profiles);
+                        if (!names.length) {
+                            listEl.innerHTML = '<div class="iec-empty">No saved profiles.</div>';
+                            return;
+                        }
+                        names.forEach(name => {
+                            const p = profiles[name];
+                            const d = new Date(p.saved);
+                            const row = document.createElement('div');
+                            row.className = 'iec-profile-row';
+                            row.innerHTML = `
+                                <div class="iec-profile-info">
+                                    <div class="iec-profile-name">${name}</div>
+                                    <div class="iec-profile-date">${d.toLocaleDateString()} ${d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div>
+                                </div>
+                                <div class="iec-profile-btns">
+                                    <button class="iec-load-btn">Load</button>
+                                    <button class="iec-del-btn">✕</button>
+                                </div>
+                            `;
+                            row.querySelector('.iec-load-btn').addEventListener('click', async () => {
+                                const ip = getIp(); if (!ip) return;
+                                iecStatus.textContent = `Applying "${name}"…`;
+                                for (const [key, val] of Object.entries(p.settings)) {
+                                    await postSetting(ip, key, val);
+                                }
+                                applyValsToControls(Object.fromEntries(Object.entries(p.settings).map(([k,v])=>[k,String(v)])));
+                                iecStatus.textContent = `"${name}" applied.`;
+                                setTimeout(() => { iecStatus.textContent = ''; }, 3000);
+                            });
+                            row.querySelector('.iec-del-btn').addEventListener('click', async () => {
+                                await fetch(`/api/iec-profiles/${encodeURIComponent(name)}`, { method: 'DELETE' });
+                                loadIECProfiles();
+                            });
+                            listEl.appendChild(row);
+                        });
+                    } catch (e) {
+                        listEl.innerHTML = '<div class="iec-empty">Failed to load profiles.</div>';
+                    }
+                };
+
+                sec.querySelector('.iec-save-btn').addEventListener('click', async () => {
+                    const nameInput = sec.querySelector('.iec-name-input');
+                    const name = nameInput.value.trim();
+                    if (!name) { nameInput.style.borderColor = 'var(--error-color)'; return; }
+                    nameInput.style.borderColor = '';
+                    await fetch('/api/iec-profiles', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, settings: readSettings() })
+                    });
+                    nameInput.value = '';
+                    loadIECProfiles();
+                });
+
+                sec.querySelector('.iec-apply-btn').addEventListener('click', async () => {
+                    const ip = getIp(); if (!ip) return;
+                    const presetInput = sec.querySelector('.iec-presets-input');
+                    const presets = parsePresetRange(presetInput.value);
+                    if (!presets.length) { presetInput.style.borderColor = 'var(--error-color)'; return; }
+                    presetInput.style.borderColor = '';
+                    const settings = readSettings();
+                    for (const n of presets) {
+                        iecStatus.textContent = `Applying to preset ${n}…`;
+                        await cgi(ip, `/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&${n}`);
+                        await new Promise(r => setTimeout(r, 2000));
+                        for (const [key, val] of Object.entries(settings)) {
+                            await postSetting(ip, key, val);
+                        }
+                        await cgi(ip, `/cgi-bin/ptzctrl.cgi?ptzcmd&posset&${n}`);
+                        await new Promise(r => setTimeout(r, 300));
+                    }
+                    iecStatus.textContent = 'Done.';
+                    setTimeout(() => { iecStatus.textContent = ''; }, 3000);
+                });
+
+                // Load settings + IEC profiles when settings tab is opened
+                sec.querySelectorAll('.cam-tab').forEach(tab => {
+                    tab.addEventListener('click', () => {
+                        if (tab.dataset.tab === 'settings') {
+                            loadImageSettings();
+                            loadIECProfiles();
+                        }
+                    });
+                });
+
+                // ── Tracking wiring ────────────────────────────
+                const trackToggle = sec.querySelector('.tracking-enable');
+                trackToggle.checked = !!trackingActive[i];
+                trackToggle.addEventListener('change', () => {
+                    if (trackToggle.checked) startTracking(i);
+                    else stopTracking(i);
+                    saveCameras();
+                });
+
+                const ptzSpeedSlider = sec.querySelector('.ptz-speed');
+                if (ptzSpeedSlider) {
+                    ptzSpeedSlider.value = ptzSpeed[i] || 8;
+                    ptzSpeedSlider.closest('.setting-row').querySelector('label span').textContent = ptzSpeedSlider.value;
+                    ptzSpeedSlider.addEventListener('input', () => {
+                        ptzSpeedSlider.closest('.setting-row').querySelector('label span').textContent = ptzSpeedSlider.value;
+                        ptzSpeed[i] = +ptzSpeedSlider.value;
+                        saveCameras();
+                    });
+                }
+
+                const speedSlider = sec.querySelector('.max-speed');
+                if (speedSlider) {
+                    const initialSpeed = trackingMaxSpeed[i] || 10;
+                    speedSlider.value = initialSpeed;
+                    trackingMaxSpeed[i] = +initialSpeed;
+                    speedSlider.previousElementSibling.querySelector('span').textContent = speedSlider.value;
+                    speedSlider.addEventListener('input', () => {
+                        speedSlider.previousElementSibling.querySelector('span').textContent = speedSlider.value;
+                        trackingMaxSpeed[i] = +speedSlider.value;
+                        saveCameras();
+                    });
+                }
+
+                // Restore and wire up lost-target settings
+                const ts = trackingSettings[i] || {};
+                if (ts.lostBehavior) {
+                    const radio = sec.querySelector(`[name="lost-${i}"][value="${ts.lostBehavior}"]`);
+                    if (radio) radio.checked = true;
+                }
+                const presetNumInput = sec.querySelector('.preset-num');
+                if (presetNumInput && ts.lostPreset) presetNumInput.value = ts.lostPreset;
+
+                sec.querySelectorAll(`[name="lost-${i}"]`).forEach(radio => {
+                    radio.addEventListener('change', () => {
+                        if (!trackingSettings[i]) trackingSettings[i] = {};
+                        trackingSettings[i].lostBehavior = radio.value;
+                        saveCameras();
+                    });
+                });
+                if (presetNumInput) {
+                    presetNumInput.addEventListener('change', () => {
+                        if (!trackingSettings[i]) trackingSettings[i] = {};
+                        trackingSettings[i].lostPreset = presetNumInput.value;
+                        saveCameras();
+                    });
+                }
+
+                // Dead zone drag wiring on the stream area
+                const streamEl = sec.querySelector('.cam-stream');
+                const HIT_PX = 12;
+                streamEl.addEventListener('mousemove', e => {
+                    if (dzDrag) return;
+                    const dz  = getDeadZone(i);
+                    const lPx = normToStreamClientX(streamEl, dz.left);
+                    const rPx = normToStreamClientX(streamEl, dz.right);
+                    const x   = e.clientX;
+                    if (Math.abs(x - lPx) < HIT_PX || Math.abs(x - rPx) < HIT_PX) {
+                        streamEl.style.cursor = 'ew-resize';
+                    } else {
+                        streamEl.style.cursor = '';
+                    }
+                });
+                streamEl.addEventListener('mousedown', e => {
+                    const dz  = getDeadZone(i);
+                    const lPx = normToStreamClientX(streamEl, dz.left);
+                    const rPx = normToStreamClientX(streamEl, dz.right);
+                    const x   = e.clientX;
+                    let side = null;
+                    if (Math.abs(x - lPx) < HIT_PX) side = 'left';
+                    else if (Math.abs(x - rPx) < HIT_PX) side = 'right';
+                    if (side) {
+                        e.stopPropagation(); // prevent camera section selection
+                        e.preventDefault();
+                        dzDrag = { slot: i, side, streamEl };
+                        streamEl.style.cursor = 'ew-resize';
+                    }
+                });
+
+                // Restore dead zone from saved settings
+                if (trackingSettings[i] && trackingSettings[i].deadZone) {
+                    trackingDeadZone[i] = trackingSettings[i].deadZone;
+                }
+
+                // Restore previously assigned camera stream
+                const restoredCamId = currentLayout === 1 ? stagingCamera : sectionCameras[i];
+                if (restoredCamId) {
+                    const cam = cameras.find(c => c.id === restoredCamId);
+                    if (cam) startSnapshot(cam.ip, sec.querySelector('img'), i);
+                }
+
+                main.appendChild(sec);
+                sectionObserver.observe(sec);
+            }
+        }
+
+
+        // ── Sidebar toggle ─────────────────────────────────────
+        document.getElementById('sidebar-collapse-btn').addEventListener('click', () => {
+            document.body.classList.add('sidebar-collapsed');
+        });
+        document.getElementById('sidebar-expand-tab').addEventListener('click', () => {
+            document.body.classList.remove('sidebar-collapsed');
+        });
+
+        // ── Init ───────────────────────────────────────────────
+        // sectionObserver is defined inside renderSections scope — hoist call after DOM ready
+        renderSections();
+        loadCameras();
+
+        fetch('/api/local-subnet').then(r => r.json()).then(({ subnet }) => {
+            if (subnet) document.getElementById('input-ip').placeholder = `e.g. ${subnet}.100`;
+        }).catch(() => {});
+
+        // ── Render ─────────────────────────────────────────────
+        function renderList() {
+            const list = document.getElementById('camera-list');
+            list.innerHTML = '';
+
+            cameras.forEach((cam, index) => {
+                const item = document.createElement('div');
+                item.className = 'camera-item' + (cam.id === activeCamera ? ' active' : '');
+                item.dataset.id = cam.id;
+                item.draggable  = true;
+
+                item.innerHTML = `
+                    <span class="drag-handle" title="Drag to reorder">⠿</span>
+                    <div class="camera-thumb">
+                        <span class="camera-delete" title="Remove camera">✕</span>
+                        <img alt="" style="display:none">
+                        <div class="no-feed">No feed</div>
+                    </div>
+                    <div class="camera-name" title="${cam.name}">${cam.name}</div>
+                    <div class="camera-ip" title="${cam.ip}">${cam.ip}</div>
+                `;
+
+                // Single snapshot for thumbnail — no live polling
+                const thumbImg = item.querySelector('.camera-thumb img');
+                const noFeedEl = item.querySelector('.no-feed');
+                thumbImg.onload = () => { thumbImg.style.display = 'block'; noFeedEl.style.display = 'none'; };
+                thumbImg.src = `/api/snapshot/${cam.ip}?t=${Date.now()}`;
+
+                item.querySelector('.camera-delete').addEventListener('click', e => {
+                    e.stopPropagation();
+                    removeCamera(cam.id);
+                });
+
+                item.addEventListener('click', e => {
+                    if (e.target.classList.contains('drag-handle')) return;
+                    if (selectedSlot !== null) {
+                        assignCameraToSlot(cam.id, selectedSlot);
+                    } else if (currentLayout === 1) {
+                        assignCameraToSlot(cam.id, 0);
+                    } else {
+                        setActive(cam.id);
+                    }
+                });
+
+                item.addEventListener('dragstart', e => {
+                    dragSrcIndex = index;
+                    item.classList.add('dragging');
+                    e.dataTransfer.effectAllowed = 'move';
+                });
+                item.addEventListener('dragend', () => {
+                    item.classList.remove('dragging');
+                    document.querySelectorAll('.camera-item').forEach(el => el.classList.remove('drag-over'));
+                });
+                item.addEventListener('dragover', e => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    document.querySelectorAll('.camera-item').forEach(el => el.classList.remove('drag-over'));
+                    if (index !== dragSrcIndex) item.classList.add('drag-over');
+                });
+                item.addEventListener('drop', e => {
+                    e.preventDefault();
+                    if (dragSrcIndex === null || dragSrcIndex === index) return;
+                    const moved = cameras.splice(dragSrcIndex, 1)[0];
+                    cameras.splice(index, 0, moved);
+                    dragSrcIndex = null;
+                    renderList();
+                    saveCameras();
+                });
+
+                list.appendChild(item);
+            });
+        }
+    </script>
+</body>
+</html>

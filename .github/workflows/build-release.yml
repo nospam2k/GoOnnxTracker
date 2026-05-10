@@ -1,0 +1,200 @@
+name: Build Release with GPU support
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux
+            artifact_name: gotracker
+          - os: macos-latest
+            name: macos
+            artifact_name: gotracker
+          - os: windows-latest
+            name: windows
+            artifact_name: gotracker.exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install ONNX Runtime (Ubuntu with GPU)
+        if: runner.os == 'Linux'
+        run: |
+          set -e
+          version="1.25.1"
+          cd /tmp
+          echo "Downloading ONNX Runtime with CUDA support..."
+          curl -L --max-time 300 "https://github.com/microsoft/onnxruntime/releases/download/v${version}/onnxruntime-linux-x64-gpu-${version}.tgz" -o onnxruntime.tar.gz || {
+            echo "GPU build not available, falling back to CPU..."
+            curl -L --max-time 300 "https://github.com/microsoft/onnxruntime/releases/download/v${version}/onnxruntime-linux-x64-${version}.tgz" -o onnxruntime.tar.gz || { echo "Download failed"; exit 1; }
+          }
+          echo "Extracting..."
+          tar -xzf onnxruntime.tar.gz || { echo "Extract failed"; tar tzf onnxruntime.tar.gz | head -10; exit 1; }
+          ls -la
+          if [ -d "onnxruntime-linux-x64-${version}" ]; then
+            mv "onnxruntime-linux-x64-${version}" onnxruntime
+          elif [ -d "onnxruntime-linux-x64-gpu-${version}" ]; then
+            mv "onnxruntime-linux-x64-gpu-${version}" onnxruntime
+          else
+            echo "Expected directory not found"; ls -la onnxruntime*; exit 1
+          fi
+          echo "ONNX_RUNTIME_PATH=/tmp/onnxruntime" >> $GITHUB_ENV
+          echo "Verifying installation..."
+          ls -la /tmp/onnxruntime/lib/
+
+      - name: Install ONNX Runtime (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          set -e
+          version="1.25.1"
+          cd /tmp
+          echo "Downloading ONNX Runtime..."
+          curl -L "https://github.com/microsoft/onnxruntime/releases/download/v${version}/onnxruntime-osx-arm64-${version}.tgz" -o onnxruntime.tgz
+          echo "Extracting..."
+          tar -xzf onnxruntime.tgz
+          mv "onnxruntime-osx-arm64-${version}" onnxruntime
+          echo "ONNX_RUNTIME_PATH=/tmp/onnxruntime" >> $GITHUB_ENV
+          echo "Verifying..."
+          ls -la /tmp/onnxruntime/lib/
+          ls -la /tmp/onnxruntime/include/
+
+      - name: Install ONNX Runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = "1.25.1"
+          $url = "https://github.com/microsoft/onnxruntime/releases/download/v$version/onnxruntime-win-x64-$version.zip"
+          Invoke-WebRequest -Uri $url -OutFile onnxruntime.zip -ErrorAction Stop
+          Expand-Archive -Path onnxruntime.zip -DestinationPath . -ErrorAction Stop
+          if (Test-Path "onnxruntime-win-x64-$version") {
+            Move-Item "onnxruntime-win-x64-$version" "onnxruntime"
+          } else {
+            Get-ChildItem -Filter "onnxruntime*" | Select-Object -First 1 | Rename-Item -NewName "onnxruntime"
+          }
+          echo "ONNX_RUNTIME_PATH=$(pwd)\onnxruntime" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          set -e
+          echo "ONNX_RUNTIME_PATH: $ONNX_RUNTIME_PATH"
+          echo "Checking ONNX Runtime files..."
+          ls -la $ONNX_RUNTIME_PATH/lib/ || { echo "lib directory not found"; exit 1; }
+          ls -la $ONNX_RUNTIME_PATH/include/ || { echo "include directory not found"; exit 1; }
+
+          # Check for CUDA support
+          if [ -f "$ONNX_RUNTIME_PATH/lib/libonnxruntime_providers_cuda.so" ]; then
+            echo "✓ CUDA GPU acceleration detected"
+            cp $ONNX_RUNTIME_PATH/lib/libonnxruntime_providers_cuda.so . 2>/dev/null || true
+          else
+            echo "ℹ CPU-only build (CUDA not available)"
+          fi
+
+          export CGO_CPPFLAGS="-I$ONNX_RUNTIME_PATH/include"
+          export CGO_LDFLAGS="-L$ONNX_RUNTIME_PATH/lib -Wl,-rpath,\$ORIGIN -lonnxruntime"
+          export LD_LIBRARY_PATH="$ONNX_RUNTIME_PATH/lib:$LD_LIBRARY_PATH"
+
+          echo "Building..."
+          go build -v -o gotracker-linux . || { echo "Build failed"; exit 1; }
+
+          echo "Copying shared library..."
+          cp $ONNX_RUNTIME_PATH/lib/libonnxruntime.so.1 . || { echo "Copy failed"; ls -la $ONNX_RUNTIME_PATH/lib/; exit 1; }
+
+          echo "Build successful!"
+          ls -lh gotracker-linux libonnxruntime.so.1
+
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          export CGO_LDFLAGS="-L$ONNX_RUNTIME_PATH/lib -lonnxruntime"
+          export CGO_CPPFLAGS="-I$ONNX_RUNTIME_PATH/include"
+          go build -o gotracker-macos .
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          $onnx_path = $env:ONNX_RUNTIME_PATH -replace '\\', '/'
+          $env:CGO_LDFLAGS = "-L$onnx_path/lib -lonnxruntime"
+          $env:CGO_CPPFLAGS = "-I$onnx_path/include"
+          go build -o gotracker-windows.exe .
+        shell: pwsh
+
+      - name: Copy DLL (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Copy-Item "$env:ONNX_RUNTIME_PATH\lib\onnxruntime.dll" -Destination "onnxruntime.dll"
+
+      - name: Upload artifact (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gotracker-linux
+          path: |
+            gotracker-linux
+            libonnxruntime.so.1
+            libonnxruntime_providers_cuda.so
+
+      - name: Upload artifact (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gotracker-macos
+          path: gotracker-macos
+
+      - name: Upload artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gotracker-windows
+          path: |
+            gotracker-windows.exe
+            onnxruntime.dll
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        run: |
+          artifacts=(
+            "artifacts/gotracker-linux/gotracker-linux"
+            "artifacts/gotracker-linux/libonnxruntime.so.1"
+            "artifacts/gotracker-macos/gotracker-macos"
+            "artifacts/gotracker-windows/gotracker-windows.exe"
+            "artifacts/gotracker-windows/onnxruntime.dll"
+          )
+
+          # Add Linux CUDA provider if available
+          if [ -f "artifacts/gotracker-linux/libonnxruntime_providers_cuda.so" ]; then
+            artifacts+=("artifacts/gotracker-linux/libonnxruntime_providers_cuda.so")
+          fi
+
+          gh release create "${{ github.ref_name }}" "${artifacts[@]}" \
+            --title "Release ${{ github.ref_name }}" \
+            --generate-notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
