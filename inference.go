@@ -14,9 +14,8 @@ package main
 #include <windows.h>
 #endif
 
-// Forward declare the Go logging function
+// Forward declarations
 extern void LogMessage(char* msg);
-#define LOG(msg) LogMessage((char*)msg)
 
 static OrtEnv* g_env = NULL;
 static OrtSessionOptions* g_opts = NULL;
@@ -41,13 +40,13 @@ int create_session(const char* model_path) {
     // Check if DirectML DLL is available at runtime
     HMODULE dml_dll = LoadLibraryA("DirectML.dll");
     if (dml_dll != NULL) {
-        LOG("GPU: DirectML available");
+        LogMessage("GPU: DirectML available");
         FreeLibrary(dml_dll);
     } else {
-        LOG("GPU: CPU only (DirectML not found)");
+        LogMessage("GPU: CPU only (DirectML not found)");
     }
 #else
-    LOG("GPU: CPU only (non-Windows platform)");
+    LogMessage("GPU: CPU only (non-Windows platform)");
 #endif
 
 #ifdef _WIN32
@@ -69,7 +68,7 @@ int create_session(const char* model_path) {
     if (g_ort->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &g_meminfo) != NULL)
         return -1;
         
-    LOG("ONNX Runtime session created successfully");
+    LogMessage("ONNX Runtime session created successfully");
     return 0;
 }
 
