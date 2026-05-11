@@ -176,7 +176,7 @@ jobs:
           $rsrcPath = Join-Path $env:GOPATH "bin" "rsrc.exe"
           & $rsrcPath -arch amd64 -o app.syso app.rc
 
-          go build -o gotracker-windows.exe .
+          go build -ldflags "-H windowsgui" -o gotracker-windows.exe .
         shell: pwsh
 
       - name: Copy DLL (Windows)
