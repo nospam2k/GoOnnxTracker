@@ -18,6 +18,11 @@ jobs:
             artifact_name: gotracker
           - os: macos-latest
             name: macos
+            arch: arm64
+            artifact_name: gotracker
+          - os: macos-13
+            name: macos-intel
+            arch: x86_64
             artifact_name: gotracker
           - os: windows-latest
             name: windows
@@ -63,12 +68,13 @@ jobs:
         run: |
           set -e
           version="1.25.1"
+          arch="${{ matrix.arch }}"
           cd /tmp
-          echo "Downloading ONNX Runtime..."
-          curl -L "https://github.com/microsoft/onnxruntime/releases/download/v${version}/onnxruntime-osx-arm64-${version}.tgz" -o onnxruntime.tgz
+          echo "Downloading ONNX Runtime for $arch..."
+          curl -L "https://github.com/microsoft/onnxruntime/releases/download/v${version}/onnxruntime-osx-${arch}-${version}.tgz" -o onnxruntime.tgz
           echo "Extracting..."
           tar -xzf onnxruntime.tgz
-          mv "onnxruntime-osx-arm64-${version}" onnxruntime
+          mv "onnxruntime-osx-${arch}-${version}" onnxruntime
           echo "ONNX_RUNTIME_PATH=/tmp/onnxruntime" >> $GITHUB_ENV
           echo "Verifying..."
           ls -la /tmp/onnxruntime/lib/
@@ -124,7 +130,7 @@ jobs:
         run: |
           export CGO_LDFLAGS="-L$ONNX_RUNTIME_PATH/lib -lonnxruntime"
           export CGO_CPPFLAGS="-I$ONNX_RUNTIME_PATH/include"
-          go build -o gotracker-macos .
+          go build -o gotracker-${{ matrix.name }} .
 
       - name: Build (Windows)
         if: runner.os == 'Windows'
@@ -155,8 +161,8 @@ jobs:
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: gotracker-macos
-          path: gotracker-macos
+          name: gotracker-${{ matrix.name }}
+          path: gotracker-${{ matrix.name }}
 
       - name: Upload artifact (Windows)
         if: runner.os == 'Windows'
@@ -184,6 +190,7 @@ jobs:
             "artifacts/gotracker-linux/gotracker-linux"
             "artifacts/gotracker-linux/libonnxruntime.so.1"
             "artifacts/gotracker-macos/gotracker-macos"
+            "artifacts/gotracker-macos-intel/gotracker-macos-intel"
             "artifacts/gotracker-windows/gotracker-windows.exe"
             "artifacts/gotracker-windows/onnxruntime.dll"
           )
