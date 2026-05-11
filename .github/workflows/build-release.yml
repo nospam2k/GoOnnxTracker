@@ -159,12 +159,23 @@ jobs:
           echo "Build successful!"
           ls -lh gotracker-macos-intel libonnxruntime.dylib
 
+      - name: Install rsrc (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          go install github.com/akavel/rsrc@latest
+
       - name: Build (Windows)
         if: runner.os == 'Windows'
         run: |
           $onnx_path = $env:ONNX_RUNTIME_PATH -replace '\\', '/'
           $env:CGO_LDFLAGS = "-L$onnx_path/lib -lonnxruntime"
           $env:CGO_CPPFLAGS = "-I$onnx_path/include"
+
+          # Compile resource file
+          $rsrcPath = Join-Path $env:GOPATH "bin" "rsrc.exe"
+          & $rsrcPath -arch amd64 -o app.syso app.rc
+
           go build -o gotracker-windows.exe .
         shell: pwsh
 
