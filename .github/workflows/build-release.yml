@@ -173,7 +173,8 @@ jobs:
           $env:CGO_CPPFLAGS = "-I$onnx_path/include"
 
           # Compile resource file
-          $rsrcPath = Join-Path $env:GOPATH "bin" "rsrc.exe"
+          $gopath = go env GOPATH
+          $rsrcPath = Join-Path $gopath "bin" "rsrc.exe"
           & $rsrcPath -arch amd64 -o app.syso app.rc
 
           go build -ldflags "-H windowsgui" -o gotracker-windows.exe .
