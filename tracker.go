@@ -197,26 +197,66 @@ func (t *Tracker) handleTracking(detection *Detection) {
 	box := detection.Box
 	boxCenter := box.X + box.W/2
 	deadZoneCenter := (left + right) / 2
-	centerTolerance := 0.01
-	var dir string
+	deadZoneHalfWidth := (right - left) / 2
 
-	if boxCenter < deadZoneCenter-centerTolerance {
-		dir = "left"
-	} else if boxCenter > deadZoneCenter+centerTolerance {
-		dir = "right"
+	// Hysteresis: use a wider "stop" band than the "start moving" band.
+	// Once stopped, only start panning when outside the dead zone edges.
+	// Once panning, only stop when inside a tighter inner band around center.
+	innerStopBand := deadZoneHalfWidth * 0.4 // stop when within 40% of half-width from center
+
+	offset := boxCenter - deadZoneCenter // negative = subject left of center
+
+	if t.lastDir == "" {
+		// Currently stopped — only start if outside the dead zone
+		if boxCenter >= left && boxCenter <= right {
+			t.lastBox = &box
+			return
+		}
 	} else {
-		if t.lastDir != "" {
+		// Currently moving — stop if inside the inner stop band
+		if offset > -innerStopBand && offset < innerStopBand {
 			t.lastDir = ""
 			t.sendCGI(ip, "/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop")
+			t.lastBox = &box
+			return
 		}
-		t.lastBox = &box
-		return
 	}
 
-	if dir != t.lastDir {
-		t.lastDir = dir
-		vx := maxSpeed
-		cmd := fmt.Sprintf("/cgi-bin/ptzctrl.cgi?ptzcmd&%s&%d&%d", dir, vx, vx)
+	// Determine direction
+	var dir string
+	if offset < 0 {
+		dir = "left"
+	} else {
+		dir = "right"
+	}
+
+	// Proportional speed: scale linearly from minSpeed at the dead zone edge
+	// up to maxSpeed at the frame edge (0 or 1).
+	minSpeed := 2
+	if minSpeed > maxSpeed {
+		minSpeed = maxSpeed
+	}
+	distFromCenter := offset
+	if distFromCenter < 0 {
+		distFromCenter = -distFromCenter
+	}
+	// Normalise: 0 at dead zone edge, 1 at frame edge
+	normalised := (distFromCenter - deadZoneHalfWidth) / (0.5 - deadZoneHalfWidth)
+	if normalised < 0 {
+		normalised = 0
+	}
+	if normalised > 1 {
+		normalised = 1
+	}
+	speed := minSpeed + int(normalised*float64(maxSpeed-minSpeed))
+
+	// Only send a new CGI command when direction or speed bucket changes,
+	// to avoid hammering the camera with identical commands every frame.
+	speedBucket := speed / 2 // group into buckets of 2 to reduce chatter
+	stateKey := fmt.Sprintf("%s-%d", dir, speedBucket)
+	if stateKey != t.lastDir {
+		t.lastDir = stateKey
+		cmd := fmt.Sprintf("/cgi-bin/ptzctrl.cgi?ptzcmd&%s&%d&%d", dir, speed, speed)
 		t.sendCGI(ip, cmd)
 	}
 	t.lastBox = &box
