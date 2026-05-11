@@ -37,6 +37,9 @@ func main() {
 	runtime.LockOSThread()
 	flag.Parse()
 
+	// Initialize log channel first so logging works during init
+	logChannel = make(chan string, 100)
+
 	enforceSingleInstance()
 	Log("OnnxTracker Version: %s", version)
 
@@ -61,9 +64,6 @@ func main() {
 			frameCh:   trackingCh,
 		}
 	}
-
-	// Initialize log channel
-	logChannel = make(chan string, 100)
 
 	// Create platform-specific GUI
 	gui = NewGUI()

@@ -123,7 +123,7 @@ jobs:
           export LD_LIBRARY_PATH="$ONNX_RUNTIME_PATH/lib:$LD_LIBRARY_PATH"
 
           echo "Building..."
-          go build -v -o gotracker-linux . || { echo "Build failed"; exit 1; }
+          go build -v -ldflags "-X main.version=${{ github.ref_name }}" -o gotracker-linux . || { echo "Build failed"; exit 1; }
 
           echo "Copying shared library..."
           cp $ONNX_RUNTIME_PATH/lib/libonnxruntime.so.1 . || { echo "Copy failed"; ls -la $ONNX_RUNTIME_PATH/lib/; exit 1; }
@@ -136,7 +136,7 @@ jobs:
         run: |
           export CGO_LDFLAGS="-L$ONNX_RUNTIME_PATH/lib -lonnxruntime"
           export CGO_CPPFLAGS="-I$ONNX_RUNTIME_PATH/include"
-          go build -o gotracker-macos .
+          go build -ldflags "-X main.version=${{ github.ref_name }}" -o gotracker-macos .
 
       - name: Build (macOS Intel)
         if: matrix.name == 'macos-intel'
@@ -148,7 +148,7 @@ jobs:
 
           export CGO_CPPFLAGS="-I$ONNX_PREFIX/include/onnxruntime"
           export CGO_LDFLAGS="-L$ONNX_PREFIX/lib -lonnxruntime"
-          go build -o gotracker-macos-intel .
+          go build -ldflags "-X main.version=${{ github.ref_name }}" -o gotracker-macos-intel .
 
           # Patch rpath so the binary finds the dylib next to itself at runtime
           install_name_tool -change \
@@ -180,7 +180,7 @@ jobs:
           $rsrcPath = Join-Path $gopath "bin" "rsrc.exe"
           & $rsrcPath -arch amd64 -o app.syso app.rc
 
-          go build -ldflags "-H windowsgui" -o gotracker-windows.exe .
+          go build -ldflags "-H windowsgui -X main.version=${{ github.ref_name }}" -o gotracker-windows.exe .
         shell: pwsh
 
       - name: Copy DLL (Windows)
