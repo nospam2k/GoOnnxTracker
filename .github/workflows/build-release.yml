@@ -63,22 +63,25 @@ jobs:
           echo "Verifying installation..."
           ls -la /tmp/onnxruntime/lib/
 
-      - name: Install ONNX Runtime (macOS)
-        if: runner.os == 'macOS'
+      - name: Install ONNX Runtime (macOS ARM)
+        if: matrix.name == 'macos'
         run: |
           set -e
           version="1.25.1"
-          arch="${{ matrix.arch }}"
           cd /tmp
-          echo "Downloading ONNX Runtime for $arch..."
-          curl -L "https://github.com/microsoft/onnxruntime/releases/download/v${version}/onnxruntime-osx-${arch}-${version}.tgz" -o onnxruntime.tgz
+          echo "Downloading ONNX Runtime for arm64..."
+          curl -L "https://github.com/microsoft/onnxruntime/releases/download/v${version}/onnxruntime-osx-arm64-${version}.tgz" -o onnxruntime.tgz
           echo "Extracting..."
           tar -xzf onnxruntime.tgz
-          mv "onnxruntime-osx-${arch}-${version}" onnxruntime
+          mv "onnxruntime-osx-arm64-${version}" onnxruntime
           echo "ONNX_RUNTIME_PATH=/tmp/onnxruntime" >> $GITHUB_ENV
           echo "Verifying..."
           ls -la /tmp/onnxruntime/lib/
           ls -la /tmp/onnxruntime/include/
+
+      - name: Install ONNX Runtime (macOS Intel - Homebrew)
+        if: matrix.name == 'macos-intel'
+        run: brew install onnxruntime
 
       - name: Install ONNX Runtime (Windows)
         if: runner.os == 'Windows'
@@ -125,12 +128,19 @@ jobs:
           echo "Build successful!"
           ls -lh gotracker-linux libonnxruntime.so.1
 
-      - name: Build (macOS)
-        if: runner.os == 'macOS'
+      - name: Build (macOS ARM)
+        if: matrix.name == 'macos'
         run: |
           export CGO_LDFLAGS="-L$ONNX_RUNTIME_PATH/lib -lonnxruntime"
           export CGO_CPPFLAGS="-I$ONNX_RUNTIME_PATH/include"
-          go build -o gotracker-${{ matrix.name }} .
+          go build -o gotracker-macos .
+
+      - name: Build (macOS Intel)
+        if: matrix.name == 'macos-intel'
+        run: |
+          export CGO_LDFLAGS="-L$(brew --prefix onnxruntime)/lib -lonnxruntime"
+          export CGO_CPPFLAGS="-I$(brew --prefix onnxruntime)/include"
+          go build -o gotracker-macos-intel .
 
       - name: Build (Windows)
         if: runner.os == 'Windows'
@@ -157,12 +167,19 @@ jobs:
             libonnxruntime.so.1
             libonnxruntime_providers_cuda.so
 
-      - name: Upload artifact (macOS)
-        if: runner.os == 'macOS'
+      - name: Upload artifact (macOS ARM)
+        if: matrix.name == 'macos'
         uses: actions/upload-artifact@v4
         with:
-          name: gotracker-${{ matrix.name }}
-          path: gotracker-${{ matrix.name }}
+          name: gotracker-macos
+          path: gotracker-macos
+
+      - name: Upload artifact (macOS Intel)
+        if: matrix.name == 'macos-intel'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gotracker-macos-intel
+          path: gotracker-macos-intel
 
       - name: Upload artifact (Windows)
         if: runner.os == 'Windows'
