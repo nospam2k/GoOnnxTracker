@@ -139,9 +139,25 @@ jobs:
         if: matrix.name == 'macos-intel'
         run: |
           ONNX_PREFIX=$(brew --prefix onnxruntime)
+          ONNX_VERSION=$(brew info --json onnxruntime | python3 -c "import sys,json;print(json.load(sys.stdin)[0]['versions']['stable'])")
+          echo "ONNX prefix: $ONNX_PREFIX"
+          echo "ONNX version: $ONNX_VERSION"
+
           export CGO_CPPFLAGS="-I$ONNX_PREFIX/include/onnxruntime"
           export CGO_LDFLAGS="-L$ONNX_PREFIX/lib -lonnxruntime"
           go build -o gotracker-macos-intel .
+
+          # Patch rpath so the binary finds the dylib next to itself at runtime
+          install_name_tool -change \
+            $ONNX_PREFIX/lib/libonnxruntime.${ONNX_VERSION}.dylib \
+            @executable_path/libonnxruntime.dylib \
+            gotracker-macos-intel
+
+          # Copy dylib with a stable name for bundling
+          cp $ONNX_PREFIX/lib/libonnxruntime.${ONNX_VERSION}.dylib libonnxruntime.dylib
+
+          echo "Build successful!"
+          ls -lh gotracker-macos-intel libonnxruntime.dylib
 
       - name: Build (Windows)
         if: runner.os == 'Windows'
@@ -180,7 +196,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gotracker-macos-intel
-          path: gotracker-macos-intel
+          path: |
+            gotracker-macos-intel
+            libonnxruntime.dylib
 
       - name: Upload artifact (Windows)
         if: runner.os == 'Windows'
@@ -209,6 +227,7 @@ jobs:
             "artifacts/gotracker-linux/libonnxruntime.so.1"
             "artifacts/gotracker-macos/gotracker-macos"
             "artifacts/gotracker-macos-intel/gotracker-macos-intel"
+            "artifacts/gotracker-macos-intel/libonnxruntime.dylib"
             "artifacts/gotracker-windows/gotracker-windows.exe"
             "artifacts/gotracker-windows/onnxruntime.dll"
           )
