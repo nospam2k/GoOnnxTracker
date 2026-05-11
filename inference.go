@@ -3,6 +3,10 @@ package main
 /*
 #cgo LDFLAGS: -lonnxruntime
 #cgo CPPFLAGS: -I/usr/include -I/usr/local/include
+
+#ifndef _INFERENCE_H_
+#define _INFERENCE_H_
+
 #include <onnxruntime_c_api.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -129,6 +133,8 @@ void cleanup_ort() {
     if (g_opts) g_ort->ReleaseSessionOptions(g_opts);
     if (g_env) g_ort->ReleaseEnv(g_env);
 }
+
+#endif
 */
 import "C"
 
