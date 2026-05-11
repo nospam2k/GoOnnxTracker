@@ -33,9 +33,14 @@ int create_session(const char* model_path) {
         return -1;
 
 #ifdef _WIN32
-    // DirectML is handled by the ONNX Runtime DLL at runtime
-    // If you built ONNX Runtime with DirectML support, it will be used automatically
-    printf("Initializing Windows runtime (DirectML support depends on DLL build)\n");
+    // Try to enable DirectML for Windows
+    OrtStatus* dml_status = g_ort->SessionOptionsAppendExecutionProvider_DML(g_opts, 0);
+    if (dml_status == NULL) {
+        printf("Using DirectML GPU acceleration\n");
+    } else {
+        g_ort->ReleaseStatus(dml_status);
+        printf("DirectML not available, using CPU\n");
+    }
     fflush(stdout);
 #endif
 
