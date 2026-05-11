@@ -14,6 +14,10 @@ package main
 #include <windows.h>
 #endif
 
+// Forward declare the Go logging function
+extern void LogMessage(const char* msg);
+#define LOG(msg) LogMessage(msg)
+
 static OrtEnv* g_env = NULL;
 static OrtSessionOptions* g_opts = NULL;
 static OrtSession* g_session = NULL;
@@ -37,15 +41,14 @@ int create_session(const char* model_path) {
     // Check if DirectML DLL is available at runtime
     HMODULE dml_dll = LoadLibraryA("DirectML.dll");
     if (dml_dll != NULL) {
-        printf("GPU: DirectML available\n");
+        LOG("GPU: DirectML available");
         FreeLibrary(dml_dll);
     } else {
-        printf("GPU: CPU only (DirectML not found)\n");
+        LOG("GPU: CPU only (DirectML not found)");
     }
 #else
-    printf("GPU: CPU only (non-Windows platform)\n");
+    LOG("GPU: CPU only (non-Windows platform)");
 #endif
-    fflush(stdout);
 
 #ifdef _WIN32
     // Convert char* to wchar_t* on Windows for CreateSession
@@ -66,8 +69,7 @@ int create_session(const char* model_path) {
     if (g_ort->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &g_meminfo) != NULL)
         return -1;
         
-    printf("ONNX Runtime session created successfully\n");
-    fflush(stdout);
+    LOG("ONNX Runtime session created successfully");
     return 0;
 }
 
@@ -138,8 +140,14 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"log"
 	"unsafe"
 )
+
+//export LogMessage
+func LogMessage(msg *C.char) {
+	log.Println("[Inference]", C.GoString(msg))
+}
 
 var keypointNames = []string{
 	"nose",
