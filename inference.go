@@ -9,7 +9,9 @@ package main
 #include <wchar.h>
 #include <string.h>
 
+// Include the DirectML header if on Windows
 #ifdef _WIN32
+#include <dml_provider_factory.h>
 #include <windows.h>
 #endif
 
@@ -32,15 +34,32 @@ int create_session(const char* model_path) {
     if (g_ort->CreateSessionOptions(&g_opts) != NULL)
         return -1;
 
-#ifdef _WIN32
-    // DirectML is handled by the ONNX Runtime DLL at runtime
-    // If you built ONNX Runtime with DirectML support, it will be used automatically
-    printf("Initializing Windows runtime (DirectML support depends on DLL build)\n");
-    fflush(stdout);
-#endif
+    int used_dml = 0;
 
 #ifdef _WIN32
-    // Convert char* to wchar_t* on Windows
+    // Attempt to enable DirectML explicitly
+    const OrtDmlApi* dml_api = NULL;
+    // Query the API for the DirectML provider
+    OrtStatus* dml_status = g_ort->GetExecutionProviderApi("DirectML", ORT_API_VERSION, (const void**)&dml_api);
+    
+    if (dml_status == NULL && dml_api != NULL) {
+        // Device ID 0 is usually the primary GPU
+        if (dml_api->SessionOptionsAppendExecutionProvider_DML(g_opts, 0) == NULL) {
+            used_dml = 1;
+            printf("Execution Provider: DirectML (GPU)\n");
+        }
+    } else {
+        if (dml_status != NULL) g_ort->ReleaseStatus(dml_status);
+    }
+#endif
+
+    if (!used_dml) {
+        printf("Execution Provider: CPU\n");
+    }
+    fflush(stdout);
+
+#ifdef _WIN32
+    // Convert char* to wchar_t* on Windows for CreateSession
     int len = MultiByteToWideChar(CP_UTF8, 0, model_path, -1, NULL, 0);
     wchar_t* wide_path = (wchar_t*)malloc(len * sizeof(wchar_t));
     MultiByteToWideChar(CP_UTF8, 0, model_path, -1, wide_path, len);
@@ -57,7 +76,8 @@ int create_session(const char* model_path) {
 
     if (g_ort->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &g_meminfo) != NULL)
         return -1;
-    printf("ONNX Runtime initialized successfully\n");
+        
+    printf("ONNX Runtime session created successfully\n");
     fflush(stdout);
     return 0;
 }
