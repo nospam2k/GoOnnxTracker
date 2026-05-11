@@ -23,16 +23,6 @@ var (
 	logChannel chan string
 )
 
-// Log sends a message to the GUI log window
-func Log(format string, args ...interface{}) {
-	msg := fmt.Sprintf(format, args...)
-	select {
-	case logChannel <- msg:
-	default:
-		// Channel full, discard to avoid blocking
-	}
-}
-
 func main() {
 	runtime.LockOSThread()
 	flag.Parse()
