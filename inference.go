@@ -9,9 +9,8 @@ package main
 #include <wchar.h>
 #include <string.h>
 
-// Include the DirectML header if on Windows
+// Windows headers for runtime checks
 #ifdef _WIN32
-#include <dml_provider_factory.h>
 #include <windows.h>
 #endif
 
@@ -34,28 +33,18 @@ int create_session(const char* model_path) {
     if (g_ort->CreateSessionOptions(&g_opts) != NULL)
         return -1;
 
-    int used_dml = 0;
-
 #ifdef _WIN32
-    // Attempt to enable DirectML explicitly
-    const OrtDmlApi* dml_api = NULL;
-    // Query the API for the DirectML provider
-    OrtStatus* dml_status = g_ort->GetExecutionProviderApi("DirectML", ORT_API_VERSION, (const void**)&dml_api);
-    
-    if (dml_status == NULL && dml_api != NULL) {
-        // Device ID 0 is usually the primary GPU
-        if (dml_api->SessionOptionsAppendExecutionProvider_DML(g_opts, 0) == NULL) {
-            used_dml = 1;
-            printf("Execution Provider: DirectML (GPU)\n");
-        }
+    // Check if DirectML DLL is available at runtime
+    HMODULE dml_dll = LoadLibraryA("DirectML.dll");
+    if (dml_dll != NULL) {
+        printf("GPU: DirectML available\n");
+        FreeLibrary(dml_dll);
     } else {
-        if (dml_status != NULL) g_ort->ReleaseStatus(dml_status);
+        printf("GPU: CPU only (DirectML not found)\n");
     }
+#else
+    printf("GPU: CPU only (non-Windows platform)\n");
 #endif
-
-    if (!used_dml) {
-        printf("Execution Provider: CPU\n");
-    }
     fflush(stdout);
 
 #ifdef _WIN32
