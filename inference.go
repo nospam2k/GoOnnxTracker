@@ -15,8 +15,8 @@ package main
 #endif
 
 // Forward declare the Go logging function
-extern void LogMessage(const char* msg);
-#define LOG(msg) LogMessage(msg)
+extern void LogMessage(char* msg);
+#define LOG(msg) LogMessage((char*)msg)
 
 static OrtEnv* g_env = NULL;
 static OrtSessionOptions* g_opts = NULL;
