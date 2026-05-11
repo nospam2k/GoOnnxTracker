@@ -138,8 +138,9 @@ jobs:
       - name: Build (macOS Intel)
         if: matrix.name == 'macos-intel'
         run: |
-          export CGO_LDFLAGS="-L$(brew --prefix onnxruntime)/lib -lonnxruntime"
-          export CGO_CPPFLAGS="-I$(brew --prefix onnxruntime)/include"
+          ONNX_PREFIX=$(brew --prefix onnxruntime)
+          export CGO_CPPFLAGS="-I$ONNX_PREFIX/include/onnxruntime"
+          export CGO_LDFLAGS="-L$ONNX_PREFIX/lib -lonnxruntime"
           go build -o gotracker-macos-intel .
 
       - name: Build (Windows)
