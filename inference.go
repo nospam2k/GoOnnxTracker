@@ -256,6 +256,7 @@ func (inf *Inference) pickBestDetection(detections [][]float32) *Detection {
 	var best *Detection
 	maxOverlap := 0.0
 	maxArea := 0.0
+	var areaFallback *Detection
 
 	for _, det := range detections {
 		if len(det) < 56 {
@@ -270,11 +271,23 @@ func (inf *Inference) pickBestDetection(detections [][]float32) *Detection {
 			}
 		}
 
-		if maxConf < 0.05 {
+		if maxConf < 0.3 {
 			continue
 		}
 
 		d := parseDetection(det)
+
+		// Require at least 4 confident keypoints to count as a real person
+		if len(d.Keypoints) < 4 {
+			continue
+		}
+
+		// Always track the largest-area candidate as a fallback
+		area := d.Box.W * d.Box.H
+		if area > maxArea {
+			maxArea = area
+			areaFallback = &d
+		}
 
 		if inf.lastBox != nil {
 			overlap := boxOverlap(&d.Box, inf.lastBox)
@@ -282,13 +295,13 @@ func (inf *Inference) pickBestDetection(detections [][]float32) *Detection {
 				maxOverlap = overlap
 				best = &d
 			}
-		} else {
-			area := d.Box.W * d.Box.H
-			if area > maxArea {
-				maxArea = area
-				best = &d
-			}
 		}
+	}
+
+	// If overlap search found nothing (camera panned, subject shifted),
+	// fall back to largest detection to re-acquire rather than going lost.
+	if best == nil {
+		best = areaFallback
 	}
 
 	return best
@@ -306,7 +319,7 @@ func parseDetection(data []float32) Detection {
 		if conf > maxConf {
 			maxConf = conf
 		}
-		if conf >= 0.3 {
+		if conf >= 0.4 {
 			kpts = append(kpts, Keypoint{
 				Name:  keypointNames[i],
 				X:     x,

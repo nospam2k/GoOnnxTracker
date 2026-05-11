@@ -63,3 +63,10 @@ Check [Releases](../../releases) for the latest pre-built binaries.
 - ✅ Linux (x86_64)
 
 All with native ONNX Runtime support compiled in!
+
+
+git add <filename>
+git commit -m "<Comment>"
+git push
+git tag vX.XX.XX
+git push origin vX.XX.XX

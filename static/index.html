@@ -137,6 +137,8 @@
             overflow-y: auto;
             overflow-x: hidden;
             padding: 6px 0;
+            touch-action: pan-y;
+            -webkit-overflow-scrolling: touch;
         }
 
         #camera-list::-webkit-scrollbar { width: 6px; }
@@ -661,6 +663,8 @@
             flex: 1;
             overflow-y: auto;
             overflow-x: hidden;
+            touch-action: pan-y;
+            -webkit-overflow-scrolling: touch;
         }
 
         .cam-tab-content::-webkit-scrollbar { width: 5px; }
@@ -1779,9 +1783,12 @@
             const stopCmd = `/api/cgi/${ip}?q=${encodeURIComponent(`/cgi-bin/ptzctrl.cgi?ptzcmd&${cmd}`)}`;
             fetch(stopCmd, { keepalive: true }).catch(() => {});
             setTimeout(() => fetch(stopCmd, { keepalive: true }).catch(() => {}), 150);
+            setTimeout(() => fetch(stopCmd, { keepalive: true }).catch(() => {}), 400);
         }
 
         document.addEventListener('mouseup',       emergencyStop);
+        document.addEventListener('touchend',      emergencyStop);
+        document.addEventListener('touchcancel',   emergencyStop);
         window.addEventListener('blur',            emergencyStop);
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') emergencyStop();
@@ -2411,18 +2418,17 @@
                         e.preventDefault();
                         btn.classList.add('pressed');
                         start();
-                    });
+                    }, { passive: false });
                     btn.addEventListener('touchend',   e => {
                         e.preventDefault();
                         btn.classList.remove('pressed');
                         stop();
-                    });
+                    }, { passive: false });
                     btn.addEventListener('touchcancel', () => {
                         btn.classList.remove('pressed');
                         stop();
                     });
                     document.addEventListener('mouseup', stop);
-                    document.addEventListener('touchend', stop);
                     btn.addEventListener('mouseleave', () => { if (ptzPressed) stop(); });
                 });
 
@@ -3104,33 +3110,65 @@
 
                 // Dead zone drag wiring on the stream area
                 const streamEl = sec.querySelector('.cam-stream');
-                const HIT_PX = 12;
+                const HIT_PX = 28;
+
+                function dzHitSide(clientX) {
+                    const dz  = getDeadZone(i);
+                    const lPx = normToStreamClientX(streamEl, dz.left);
+                    const rPx = normToStreamClientX(streamEl, dz.right);
+                    if (Math.abs(clientX - lPx) < HIT_PX) return 'left';
+                    if (Math.abs(clientX - rPx) < HIT_PX) return 'right';
+                    return null;
+                }
+
                 streamEl.addEventListener('mousemove', e => {
                     if (dzDrag) return;
-                    const dz  = getDeadZone(i);
-                    const lPx = normToStreamClientX(streamEl, dz.left);
-                    const rPx = normToStreamClientX(streamEl, dz.right);
-                    const x   = e.clientX;
-                    if (Math.abs(x - lPx) < HIT_PX || Math.abs(x - rPx) < HIT_PX) {
-                        streamEl.style.cursor = 'ew-resize';
-                    } else {
-                        streamEl.style.cursor = '';
-                    }
+                    const side = dzHitSide(e.clientX);
+                    streamEl.style.cursor = side ? 'ew-resize' : '';
                 });
                 streamEl.addEventListener('mousedown', e => {
-                    const dz  = getDeadZone(i);
-                    const lPx = normToStreamClientX(streamEl, dz.left);
-                    const rPx = normToStreamClientX(streamEl, dz.right);
-                    const x   = e.clientX;
-                    let side = null;
-                    if (Math.abs(x - lPx) < HIT_PX) side = 'left';
-                    else if (Math.abs(x - rPx) < HIT_PX) side = 'right';
+                    const side = dzHitSide(e.clientX);
                     if (side) {
-                        e.stopPropagation(); // prevent camera section selection
+                        e.stopPropagation();
                         e.preventDefault();
                         dzDrag = { slot: i, side, streamEl };
                         streamEl.style.cursor = 'ew-resize';
                     }
+                });
+
+                // Touch support
+                streamEl.addEventListener('touchstart', e => {
+                    const touch = e.changedTouches[0];
+                    const side = dzHitSide(touch.clientX);
+                    if (side) {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        dzDrag = { slot: i, side, streamEl, touchId: touch.identifier };
+                    }
+                }, { passive: false });
+                streamEl.addEventListener('touchmove', e => {
+                    if (!dzDrag || dzDrag.streamEl !== streamEl) return;
+                    const touch = [...e.changedTouches].find(t => t.identifier === dzDrag.touchId);
+                    if (!touch) return;
+                    e.preventDefault();
+                    const dz   = getDeadZone(dzDrag.slot);
+                    const norm = streamClientXToNorm(streamEl, touch.clientX);
+                    const MIN_WIDTH = 0.04;
+                    if (dzDrag.side === 'left') {
+                        dz.left = Math.max(0.01, Math.min(dz.right - MIN_WIDTH, norm));
+                    } else {
+                        dz.right = Math.min(0.99, Math.max(dz.left + MIN_WIDTH, norm));
+                    }
+                    trackingDeadZone[dzDrag.slot] = dz;
+                    if (!trackingSettings[dzDrag.slot]) trackingSettings[dzDrag.slot] = {};
+                    trackingSettings[dzDrag.slot].deadZone = { ...dz };
+                    drawTrackingOverlay(dzDrag.slot, null, null);
+                    saveCameras();
+                }, { passive: false });
+                streamEl.addEventListener('touchend', e => {
+                    if (!dzDrag || dzDrag.streamEl !== streamEl) return;
+                    const touch = [...e.changedTouches].find(t => t.identifier === dzDrag.touchId);
+                    if (touch) dzDrag = null;
                 });
 
                 // Restore dead zone from saved settings

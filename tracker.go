@@ -199,11 +199,6 @@ func (t *Tracker) handleTracking(detection *Detection) {
 	deadZoneCenter := (left + right) / 2
 	deadZoneHalfWidth := (right - left) / 2
 
-	// Hysteresis: use a wider "stop" band than the "start moving" band.
-	// Once stopped, only start panning when outside the dead zone edges.
-	// Once panning, only stop when inside a tighter inner band around center.
-	innerStopBand := deadZoneHalfWidth * 0.4 // stop when within 40% of half-width from center
-
 	offset := boxCenter - deadZoneCenter // negative = subject left of center
 
 	if t.lastDir == "" {
@@ -213,8 +208,16 @@ func (t *Tracker) handleTracking(detection *Detection) {
 			return
 		}
 	} else {
-		// Currently moving — stop if inside the inner stop band
-		if offset > -innerStopBand && offset < innerStopBand {
+		// Currently moving — stop once subject is within the dead zone
+		if boxCenter >= left && boxCenter <= right {
+			t.lastDir = ""
+			t.sendCGI(ip, "/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop")
+			t.lastBox = &box
+			return
+		}
+		// Also stop if we've overshot past the far edge of the frame
+		// (moved right while subject was left, or vice versa — true overshoot)
+		if (offset < 0 && boxCenter <= 0) || (offset > 0 && boxCenter >= 1) {
 			t.lastDir = ""
 			t.sendCGI(ip, "/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop")
 			t.lastBox = &box
