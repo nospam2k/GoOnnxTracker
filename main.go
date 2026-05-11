@@ -18,10 +18,7 @@ type GUI interface {
 	Cleanup()
 }
 
-var (
-	gui        GUI
-	logChannel chan string
-)
+var gui GUI
 
 func main() {
 	runtime.LockOSThread()

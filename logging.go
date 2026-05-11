@@ -2,6 +2,8 @@ package main
 
 import "fmt"
 
+var logChannel chan string
+
 // Log sends a message to the log channel (GUI on Windows, or discarded on Linux)
 func Log(format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
