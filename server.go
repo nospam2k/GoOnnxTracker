@@ -116,9 +116,9 @@ func StartWebServer(logChan chan string) error {
 			srv.Shutdown(shutdownCtx)
 		}()
 
-		log.Printf("OnnxTracker running at http://localhost%s", *addr)
+		Log("OnnxTracker running at http://localhost%s", *addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("Server error: %v", err)
+			Log("Server error: %v", err)
 		}
 	}()
 
@@ -199,13 +199,13 @@ func handleGetCameras(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		log.Printf("[cameras] load error: %v", err)
+		Log("[cameras] load error: %v", err)
 		writeJSON(w, 200, map[string]any{})
 		return
 	}
 	var cameras any
 	if err := json.Unmarshal(data, &cameras); err != nil {
-		log.Printf("[cameras] parse error: %v", err)
+		Log("[cameras] parse error: %v", err)
 		writeJSON(w, 200, map[string]any{})
 		return
 	}
@@ -229,7 +229,7 @@ func handlePostCameras(w http.ResponseWriter, r *http.Request) {
 	enc.SetIndent("", "  ")
 	enc.Encode(raw)
 	if err := os.WriteFile(camerasFile, []byte(pretty.String()), 0644); err != nil {
-		log.Printf("[cameras] save error: %v", err)
+		Log("[cameras] save error: %v", err)
 		writeJSON(w, 500, map[string]any{"ok": false})
 		return
 	}
@@ -524,7 +524,7 @@ func handleScan(w http.ResponseWriter, r *http.Request) {
 func handleWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := websocket.Upgrade(w, r, nil, 1024, 1024)
 	if err != nil {
-		log.Printf("WebSocket upgrade error: %v", err)
+		Log("WebSocket upgrade error: %v", err)
 		return
 	}
 	client := &Client{Hub: hub, Conn: conn, Send: make(chan []byte, 256)}

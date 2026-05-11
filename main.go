@@ -23,18 +23,28 @@ var (
 	logChannel chan string
 )
 
+// Log sends a message to the GUI log window
+func Log(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	select {
+	case logChannel <- msg:
+	default:
+		// Channel full, discard to avoid blocking
+	}
+}
+
 func main() {
 	runtime.LockOSThread()
 	flag.Parse()
 
 	enforceSingleInstance()
-	fmt.Println("OnnxTracker Version:", version)
+	Log("OnnxTracker Version: %s", version)
 
 	// Initialize inference once
 	if inference == nil {
 		inference = &Inference{}
 		if err := inference.init(); err != nil {
-			fmt.Printf("Failed to initialize inference: %v\n", err)
+			Log("Failed to initialize inference: %v", err)
 			return
 		}
 	}
@@ -60,11 +70,11 @@ func main() {
 
 	// Start server before GUI so it's always running on launch
 	if err := StartWebServer(logChannel); err != nil {
-		fmt.Printf("Failed to start server: %v\n", err)
+		Log("Failed to start server: %v", err)
 	}
 
 	// Run platform-specific GUI (blocks)
 	if err := gui.Run(logChannel); err != nil {
-		fmt.Printf("GUI error: %v\n", err)
+		Log("GUI error: %v", err)
 	}
 }
