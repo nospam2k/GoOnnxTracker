@@ -178,7 +178,7 @@ jobs:
           # Compile resource file
           $gopath = go env GOPATH
           $rsrcPath = Join-Path $gopath "bin" "rsrc.exe"
-          & $rsrcPath -arch amd64 -o app.syso app.rc
+          & $rsrcPath -arch amd64 -ico app.ico -o app.syso
 
           go build -ldflags "-H windowsgui -X main.version=${{ github.ref_name }}" -o gotracker-windows.exe .
         shell: pwsh
