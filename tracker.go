@@ -295,7 +295,6 @@ func (t *Tracker) handleTracking(detection *Detection) {
 	box := detection.Box
 	boxCenter := box.X + box.W/2
 	deadZoneCenter := (left + right) / 2
-	deadZoneHalfWidth := (right - left) / 2
 
 	offset := boxCenter - deadZoneCenter
 
