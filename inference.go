@@ -20,6 +20,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"sync"
 	"unsafe"
 )
 
@@ -39,6 +40,10 @@ var keypointNames = []string{
 	"left_knee", "right_knee",
 	"left_ankle", "right_ankle",
 }
+
+// faceKeypoints defines the indices of face-related keypoints:
+// 0=nose, 1=left_eye, 2=right_eye, 3=left_ear, 4=right_ear
+var faceKeypoints = map[int]bool{0: true, 1: true, 2: true, 3: true, 4: true}
 
 type Keypoint struct {
 	Name  string  `json:"name"`
@@ -61,9 +66,24 @@ type Detection struct {
 }
 
 type PoseMessage struct {
-	Cmd       string      `json:"cmd"`
-	Keypoints []Keypoint  `json:"keypoints,omitempty"`
-	Box       *Box        `json:"box,omitempty"`
+	Cmd       string     `json:"cmd"`
+	Keypoints []Keypoint `json:"keypoints,omitempty"`
+	Box       *Box       `json:"box,omitempty"`
+}
+
+// inputPool reuses the float32 input buffer across frames (256*256*3 = 196608 floats).
+var inputPool = sync.Pool{
+	New: func() interface{} {
+		s := make([]float32, 256*256*3)
+		return &s
+	},
+}
+
+// resizePool reuses the RGBA image used for resize output.
+var resizePool = sync.Pool{
+	New: func() interface{} {
+		return image.NewRGBA(image.Rect(0, 0, 256, 256))
+	},
 }
 
 type Inference struct {
@@ -87,23 +107,31 @@ func (inf *Inference) Infer(jpegData []byte) (*Detection, error) {
 		return nil, fmt.Errorf("decode jpeg: %w", err)
 	}
 
-	resized := resizeImage(img, 256, 256)
-	inputData := imageToFloat32(resized)
+	// Reuse resize buffer from pool.
+	dst := resizePool.Get().(*image.RGBA)
+	resizeImageInto(img, dst)
 
-	// Prepare input tensor shape: (1, 256, 256, 3)
+	// Reuse float input buffer from pool.
+	inputPtr := inputPool.Get().(*[]float32)
+	inputData := *inputPtr
+	imageToFloat32Into(dst, inputData)
+	resizePool.Put(dst)
+
 	shape := [4]C.int64_t{1, 256, 256, 3}
 
 	var outputPtr *C.float
 	var outputShape [2]C.int64_t
 
-	// Run inference
-	if ret := C.run_inference(
+	ret := C.run_inference(
 		(*C.float)(unsafe.Pointer(&inputData[0])),
 		(*C.int64_t)(unsafe.Pointer(&shape[0])),
 		C.int(4),
 		&outputPtr,
 		(*C.int64_t)(unsafe.Pointer(&outputShape[0])),
-	); ret != 0 {
+	)
+	inputPool.Put(inputPtr)
+
+	if ret != 0 {
 		return nil, fmt.Errorf("inference failed")
 	}
 
@@ -112,34 +140,14 @@ func (inf *Inference) Infer(jpegData []byte) (*Detection, error) {
 		return nil, nil
 	}
 
-	// Output shape is [1, 6, 56] - batch=1, 6 detections, 56 values per detection
+	// Output shape is [1, 6, 56] — read directly from C memory, no copy.
 	const numDets = 6
 	const elementsPerDet = 56
-	totalElements := numDets * elementsPerDet
+	const totalElements = numDets * elementsPerDet
 
-	// Extract output data
-	outputSlice := unsafe.Slice(outputPtr, totalElements)
-	var outputData []float32
-	for i := 0; i < len(outputSlice); i++ {
-		outputData = append(outputData, float32(outputSlice[i]))
-	}
+	outputData := unsafe.Slice((*float32)(unsafe.Pointer(outputPtr)), totalElements)
 
-	if len(outputData) < elementsPerDet {
-		inf.lastBox = nil
-		return nil, nil
-	}
-
-	// Parse detections
-	var detections [][]float32
-	for i := 0; i < numDets; i++ {
-		if i*elementsPerDet+elementsPerDet <= len(outputData) {
-			det := make([]float32, elementsPerDet)
-			copy(det, outputData[i*elementsPerDet:(i+1)*elementsPerDet])
-			detections = append(detections, det)
-		}
-	}
-
-	detection := inf.pickBestDetection(detections)
+	detection := inf.pickBestDetection(outputData, numDets, elementsPerDet)
 	if detection != nil {
 		inf.lastBox = &detection.Box
 	} else {
@@ -148,37 +156,33 @@ func (inf *Inference) Infer(jpegData []byte) (*Detection, error) {
 	return detection, nil
 }
 
-func (inf *Inference) pickBestDetection(detections [][]float32) *Detection {
+// pickBestDetection operates directly on the C output slice — no intermediate
+// [][]float32 allocation.
+func (inf *Inference) pickBestDetection(data []float32, numDets, stride int) *Detection {
 	var best *Detection
 	maxOverlap := 0.0
 	maxArea := 0.0
 	var areaFallback *Detection
 
-	for _, det := range detections {
-		if len(det) < 56 {
-			continue
-		}
+	for i := 0; i < numDets; i++ {
+		det := data[i*stride : i*stride+stride]
 
+		// Only score face keypoints (indices 0–4).
 		maxConf := 0.0
-		for i := 0; i < 17; i++ {
-			conf := float64(det[i*3+2])
-			if conf > maxConf {
+		for j := 0; j < 5; j++ {
+			if conf := float64(det[j*3+2]); conf > maxConf {
 				maxConf = conf
 			}
 		}
-
 		if maxConf < 0.3 {
 			continue
 		}
 
 		d := parseDetection(det)
-
-		// Require at least 4 confident keypoints to count as a real person
-		if len(d.Keypoints) < 4 {
+		if len(d.Keypoints) < 2 {
 			continue
 		}
 
-		// Always track the largest-area candidate as a fallback
 		area := d.Box.W * d.Box.H
 		if area > maxArea {
 			maxArea = area
@@ -186,20 +190,16 @@ func (inf *Inference) pickBestDetection(detections [][]float32) *Detection {
 		}
 
 		if inf.lastBox != nil {
-			overlap := boxOverlap(&d.Box, inf.lastBox)
-			if overlap > maxOverlap {
+			if overlap := boxOverlap(&d.Box, inf.lastBox); overlap > maxOverlap {
 				maxOverlap = overlap
 				best = &d
 			}
 		}
 	}
 
-	// If overlap search found nothing (camera panned, subject shifted),
-	// fall back to largest detection to re-acquire rather than going lost.
 	if best == nil {
 		best = areaFallback
 	}
-
 	return best
 }
 
@@ -215,7 +215,7 @@ func parseDetection(data []float32) Detection {
 		if conf > maxConf {
 			maxConf = conf
 		}
-		if conf >= 0.4 {
+		if faceKeypoints[i] && conf >= 0.4 {
 			kpts = append(kpts, Keypoint{
 				Name:  keypointNames[i],
 				X:     x,
@@ -225,83 +225,88 @@ func parseDetection(data []float32) Detection {
 		}
 	}
 
-	var boxVals [4]float64
-	if len(data) >= 55 {
-		boxVals[0] = float64(data[51])
-		boxVals[1] = float64(data[52])
-		boxVals[2] = float64(data[53])
-		boxVals[3] = float64(data[54])
-	}
-
-	box := Box{
-		X: boxVals[1],
-		Y: boxVals[0],
-		W: boxVals[3] - boxVals[1],
-		H: boxVals[2] - boxVals[0],
-	}
-
 	return Detection{
 		Keypoints: kpts,
-		Box:       box,
+		Box:       faceBox(kpts),
 		Score:     maxConf,
 	}
 }
 
+// faceBox computes a bounding box tightly around the provided face keypoints,
+// with a small padding so the box doesn't clip the face edges.
+func faceBox(kpts []Keypoint) Box {
+	if len(kpts) == 0 {
+		return Box{}
+	}
+
+	minX, minY := kpts[0].X, kpts[0].Y
+	maxX, maxY := kpts[0].X, kpts[0].Y
+
+	for _, kp := range kpts[1:] {
+		if kp.X < minX {
+			minX = kp.X
+		}
+		if kp.X > maxX {
+			maxX = kp.X
+		}
+		if kp.Y < minY {
+			minY = kp.Y
+		}
+		if kp.Y > maxY {
+			maxY = kp.Y
+		}
+	}
+
+	const pad = 0.05
+	return Box{
+		X: minX - pad,
+		Y: minY - pad,
+		W: (maxX - minX) + pad*2,
+		H: (maxY - minY) + pad*2,
+	}
+}
+
 func boxOverlap(box1, box2 *Box) float64 {
-	x1Left := box1.X
-	x1Right := box1.X + box1.W
-	y1Top := box1.Y
-	y1Bottom := box1.Y + box1.H
-
-	x2Left := box2.X
-	x2Right := box2.X + box2.W
-	y2Top := box2.Y
-	y2Bottom := box2.Y + box2.H
-
-	interX := min(x1Right, x2Right) - max(x1Left, x2Left)
-	interY := min(y1Bottom, y2Bottom) - max(y1Top, y2Top)
-	if interX < 0 || interY < 0 {
+	interX := min(box1.X+box1.W, box2.X+box2.W) - max(box1.X, box2.X)
+	interY := min(box1.Y+box1.H, box2.Y+box2.H) - max(box1.Y, box2.Y)
+	if interX <= 0 || interY <= 0 {
 		return 0
 	}
 	return interX * interY
 }
 
-func resizeImage(src image.Image, width, height int) image.Image {
+// resizeImageInto writes a nearest-neighbour 256x256 resize of src into dst,
+// reusing the existing dst allocation.
+func resizeImageInto(src image.Image, dst *image.RGBA) {
 	bounds := src.Bounds()
-	srcWidth := bounds.Max.X - bounds.Min.X
-	srcHeight := bounds.Max.Y - bounds.Min.Y
+	srcW := bounds.Max.X - bounds.Min.X
+	srcH := bounds.Max.Y - bounds.Min.Y
+	const dstW, dstH = 256, 256
 
-	dst := image.NewRGBA(image.Rect(0, 0, width, height))
-
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			srcX := x * srcWidth / width
-			srcY := y * srcHeight / height
+	for y := 0; y < dstH; y++ {
+		srcY := bounds.Min.Y + y*srcH/dstH
+		for x := 0; x < dstW; x++ {
+			srcX := bounds.Min.X + x*srcW/dstW
 			r, g, b, a := src.At(srcX, srcY).RGBA()
 			dst.SetRGBA(x, y, color.RGBA{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8), uint8(a >> 8)})
 		}
 	}
-	return dst
 }
 
-func imageToFloat32(img image.Image) []float32 {
+// imageToFloat32Into fills an existing float32 slice from an RGBA image,
+// reading directly from the packed Pix buffer instead of going through At().
+func imageToFloat32Into(img *image.RGBA, out []float32) {
 	bounds := img.Bounds()
-	w := bounds.Max.X - bounds.Min.X
-	h := bounds.Max.Y - bounds.Min.Y
-
-	data := make([]float32, w*h*3)
 	idx := 0
-
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			r, g, b, _ := img.At(x, y).RGBA()
-			data[idx] = float32(r >> 8)
-			data[idx+1] = float32(g >> 8)
-			data[idx+2] = float32(b >> 8)
+			off := img.PixOffset(x, y)
+			out[idx] = float32(img.Pix[off])
+			out[idx+1] = float32(img.Pix[off+1])
+			out[idx+2] = float32(img.Pix[off+2])
 			idx += 3
 		}
 	}
-	return data
 }
 
 func (det *Detection) ToJSON() []byte {
@@ -314,10 +319,9 @@ func (det *Detection) ToJSON() []byte {
 	return data
 }
 
+// NotFoundJSON returns the pre-marshaled constant from tracker.go.
 func NotFoundJSON() []byte {
-	msg := PoseMessage{Cmd: "notfound"}
-	data, _ := json.Marshal(msg)
-	return data
+	return notFoundMsg
 }
 
 func min(a, b float64) float64 {

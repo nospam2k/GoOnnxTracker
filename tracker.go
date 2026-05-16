@@ -10,28 +10,93 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 )
+
+// cachedConfig holds the parsed cameras.json so we don't hit disk every frame.
+type cachedConfig struct {
+	mu      sync.RWMutex
+	data    map[string]interface{}
+	modTime time.Time
+}
+
+func (c *cachedConfig) load(path string) map[string]interface{} {
+	// Check file mod time — only re-read if changed.
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil
+	}
+
+	c.mu.RLock()
+	if !info.ModTime().After(c.modTime) && c.data != nil {
+		defer c.mu.RUnlock()
+		return c.data
+	}
+	c.mu.RUnlock()
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Double-check after acquiring write lock.
+	if !info.ModTime().After(c.modTime) && c.data != nil {
+		return c.data
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return c.data // return stale on error
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return c.data
+	}
+	c.data = cfg
+	c.modTime = info.ModTime()
+	return c.data
+}
+
+var configCache cachedConfig
+
+// notFoundMsg is a pre-marshaled constant — no allocation per frame.
+var notFoundMsg = func() []byte {
+	b, _ := json.Marshal(map[string]string{"cmd": "notfound"})
+	return b
+}()
 
 type Tracker struct {
 	inference *Inference
 	hub       *Hub
 	frameCh   chan []byte
 
-	ctx       context.Context
-	cancel    context.CancelFunc
-	camURL    string
-	lastDir   string
-	lastBox   *Box
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	lastDir string
+	lastBox *Box
+
 	httpClient *http.Client
-	fetchSem  chan struct{}
+	fetchSem   chan struct{}
+
+	// CGI command deduplication: serialize PTZ commands through a single
+	// buffered channel so we never pile up goroutines.
+	cgiCh chan string
+
+	// lastBroadcast tracks the last payload sent so we skip identical frames.
+	lastBroadcast atomic.Pointer[[]byte]
 }
 
 func (t *Tracker) Run() {
 	t.ctx, t.cancel = context.WithCancel(context.Background())
 	defer t.cancel()
+
 	t.httpClient = &http.Client{Timeout: 3 * time.Second}
 	t.fetchSem = make(chan struct{}, 1)
+	t.cgiCh = make(chan string, 4)
+
+	// Single CGI worker — no goroutine pile-up.
+	go t.cgiWorker()
 
 	ticker := time.NewTicker(33 * time.Millisecond)
 	defer ticker.Stop()
@@ -48,6 +113,31 @@ func (t *Tracker) Run() {
 				go t.fetchFrameWithSem()
 			default:
 			}
+		}
+	}
+}
+
+// cgiWorker drains cgiCh and sends HTTP requests serially, dropping
+// redundant commands that arrive while a request is in-flight.
+func (t *Tracker) cgiWorker() {
+	for {
+		select {
+		case <-t.ctx.Done():
+			return
+		case cmd := <-t.cgiCh:
+			mu.RLock()
+			ip := extractIPFromURL(cameraURL)
+			mu.RUnlock()
+			if ip == "" {
+				continue
+			}
+			target := "http://" + ip + cmd
+			resp, err := t.httpClient.Get(target)
+			if err != nil {
+				log.Printf("[Tracking] CGI error: %v", err)
+				continue
+			}
+			resp.Body.Close()
 		}
 	}
 }
@@ -101,38 +191,44 @@ func extractJPEGFromMJPEG(r interface {
 	reader := bufio.NewReader(r)
 	var contentLen int
 
-	// Read headers until we find Content-Length or a blank line
 	for {
-		line, _ := reader.ReadString('\n')
-		if line == "\r\n" || line == "\n" {
+		line, err := reader.ReadString('\n')
+		if line == "\r\n" || line == "\n" || err != nil {
 			break
 		}
-		if strings.Contains(line, "Content-Length") {
-			var n int
-			fmt.Sscanf(line, "Content-Length: %d", &n)
-			contentLen = n
+		if strings.HasPrefix(line, "Content-Length") {
+			fmt.Sscanf(line, "Content-Length: %d", &contentLen)
 		}
 	}
 
-	// Read JPEG data
 	if contentLen > 0 {
 		b := make([]byte, contentLen)
 		n, _ := reader.Read(b)
 		return b[:n]
 	}
 
-	// Fallback: read until we find JPEG end marker
+	// Fallback: scan for JPEG end marker 0xFF 0xD9.
+	// Read into a single growing buffer and stop as soon as we find it
+	// rather than scanning the whole buffer from the start each iteration.
 	var jpegData bytes.Buffer
+	chunk := make([]byte, 4096)
 	for {
-		b := make([]byte, 4096)
-		n, _ := reader.Read(b)
+		n, _ := reader.Read(chunk)
 		if n == 0 {
 			break
 		}
-		jpegData.Write(b[:n])
-		if bytes.Contains(jpegData.Bytes(), []byte{0xFF, 0xD9}) {
-			idx := bytes.LastIndex(jpegData.Bytes(), []byte{0xFF, 0xD9})
-			return jpegData.Bytes()[:idx+2]
+		jpegData.Write(chunk[:n])
+		// Only scan the tail — the marker must end at or after the new data.
+		tail := jpegData.Bytes()
+		start := jpegData.Len() - n - 1
+		if start < 0 {
+			start = 0
+		}
+		if idx := bytes.Index(tail[start:], []byte{0xFF, 0xD9}); idx >= 0 {
+			end := start + idx + 2
+			result := make([]byte, end)
+			copy(result, tail[:end])
+			return result
 		}
 	}
 	return nil
@@ -140,40 +236,46 @@ func extractJPEGFromMJPEG(r interface {
 
 func (t *Tracker) processFrame(jpegData []byte) {
 	detection, err := t.inference.Infer(jpegData)
-	if err != nil {
-		t.hub.Broadcast <- NotFoundJSON()
+	if err != nil || detection == nil {
+		// Only broadcast notfound if we previously had a detection,
+		// to avoid flooding the websocket with identical messages.
+		prev := t.lastBroadcast.Load()
+		if prev == nil || string(*prev) != string(notFoundMsg) {
+			t.hub.Broadcast <- notFoundMsg
+			t.lastBroadcast.Store(&notFoundMsg)
+		}
+		if detection == nil {
+			t.handleTrackingLost()
+		}
 		return
 	}
 
-	if detection == nil {
-		t.hub.Broadcast <- NotFoundJSON()
-		t.handleTrackingLost()
-		return
+	payload := detection.ToJSON()
+
+	// Skip broadcast if payload is identical to last frame.
+	prev := t.lastBroadcast.Load()
+	if prev == nil || string(*prev) != string(payload) {
+		t.hub.Broadcast <- payload
+		t.lastBroadcast.Store(&payload)
 	}
 
-	t.hub.Broadcast <- detection.ToJSON()
 	t.handleTracking(detection)
 }
 
 func (t *Tracker) handleTracking(detection *Detection) {
+	// Use cached config — no disk I/O on the hot path.
+	config := configCache.load(camerasFile)
+	if config == nil {
+		return
+	}
+
 	mu.RLock()
 	ip := extractIPFromURL(cameraURL)
 	mu.RUnlock()
-
 	if ip == "" {
 		return
 	}
 
-	data, err := os.ReadFile(camerasFile)
-	if err != nil {
-		return
-	}
-	var config map[string]interface{}
-	if err := json.Unmarshal(data, &config); err != nil {
-		return
-	}
-
-	// Find the slot for the current camera
 	slot := findCameraSlot(config, ip)
 
 	if !getBool(config, "trackingActive", slot) {
@@ -199,33 +301,28 @@ func (t *Tracker) handleTracking(detection *Detection) {
 	deadZoneCenter := (left + right) / 2
 	deadZoneHalfWidth := (right - left) / 2
 
-	offset := boxCenter - deadZoneCenter // negative = subject left of center
+	offset := boxCenter - deadZoneCenter
 
 	if t.lastDir == "" {
-		// Currently stopped — only start if outside the dead zone
 		if boxCenter >= left && boxCenter <= right {
 			t.lastBox = &box
 			return
 		}
 	} else {
-		// Currently moving — stop once subject is within the dead zone
 		if boxCenter >= left && boxCenter <= right {
 			t.lastDir = ""
-			t.sendCGI(ip, "/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop")
+			t.sendCGI("/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop")
 			t.lastBox = &box
 			return
 		}
-		// Also stop if we've overshot past the far edge of the frame
-		// (moved right while subject was left, or vice versa — true overshoot)
 		if (offset < 0 && boxCenter <= 0) || (offset > 0 && boxCenter >= 1) {
 			t.lastDir = ""
-			t.sendCGI(ip, "/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop")
+			t.sendCGI("/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop")
 			t.lastBox = &box
 			return
 		}
 	}
 
-	// Determine direction
 	var dir string
 	if offset < 0 {
 		dir = "left"
@@ -233,8 +330,6 @@ func (t *Tracker) handleTracking(detection *Detection) {
 		dir = "right"
 	}
 
-	// Proportional speed: scale linearly from minSpeed at the dead zone edge
-	// up to maxSpeed at the frame edge (0 or 1).
 	minSpeed := 2
 	if minSpeed > maxSpeed {
 		minSpeed = maxSpeed
@@ -243,7 +338,6 @@ func (t *Tracker) handleTracking(detection *Detection) {
 	if distFromCenter < 0 {
 		distFromCenter = -distFromCenter
 	}
-	// Normalise: 0 at dead zone edge, 1 at frame edge
 	normalised := (distFromCenter - deadZoneHalfWidth) / (0.5 - deadZoneHalfWidth)
 	if normalised < 0 {
 		normalised = 0
@@ -253,14 +347,11 @@ func (t *Tracker) handleTracking(detection *Detection) {
 	}
 	speed := minSpeed + int(normalised*float64(maxSpeed-minSpeed))
 
-	// Only send a new CGI command when direction or speed bucket changes,
-	// to avoid hammering the camera with identical commands every frame.
-	speedBucket := speed / 2 // group into buckets of 2 to reduce chatter
+	speedBucket := speed / 2
 	stateKey := fmt.Sprintf("%s-%d", dir, speedBucket)
 	if stateKey != t.lastDir {
 		t.lastDir = stateKey
-		cmd := fmt.Sprintf("/cgi-bin/ptzctrl.cgi?ptzcmd&%s&%d&%d", dir, speed, speed)
-		t.sendCGI(ip, cmd)
+		t.sendCGI(fmt.Sprintf("/cgi-bin/ptzctrl.cgi?ptzcmd&%s&%d&%d", dir, speed, speed))
 	}
 	t.lastBox = &box
 }
@@ -268,27 +359,18 @@ func (t *Tracker) handleTracking(detection *Detection) {
 func (t *Tracker) handleTrackingLost() {
 	if t.lastDir != "" {
 		t.lastDir = ""
-		mu.RLock()
-		ip := extractIPFromURL(cameraURL)
-		mu.RUnlock()
-		if ip != "" {
-			t.sendCGI(ip, "/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop")
-		}
+		t.sendCGI("/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop")
 	}
 	t.lastBox = nil
 }
 
-func (t *Tracker) sendCGI(ip, cgiPath string) {
-	if t.httpClient == nil {
-		return
+// sendCGI queues a PTZ command. If the queue is full the command is dropped
+// (the next frame will re-evaluate and re-send if still needed).
+func (t *Tracker) sendCGI(cgiPath string) {
+	select {
+	case t.cgiCh <- cgiPath:
+	default:
 	}
-	go func() {
-		target := "http://" + ip + cgiPath
-		_, err := t.httpClient.Get(target)
-		if err != nil {
-			log.Printf("[Tracking] CGI error: %v", err)
-		}
-	}()
 }
 
 func extractIPFromURL(url string) string {

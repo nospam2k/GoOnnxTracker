@@ -67,6 +67,6 @@ All with native ONNX Runtime support compiled in!
 
 git add <filename>
 git commit -m "<Comment>"
-git push
+git push origin main
 git tag vX.XX.XX
 git push origin vX.XX.XX
