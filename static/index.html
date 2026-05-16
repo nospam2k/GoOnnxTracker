@@ -43,7 +43,7 @@
             -webkit-app-region: no-drag;
         }
 
-        button:active, button.pressed {
+        button.pressed {
             background: var(--main-color) !important;
             color: #fff !important;
         }
@@ -718,9 +718,18 @@
             -ms-touch-action: none;
         }
 
+        .dpad button {
+            pointer-events: auto;
+            transition: none !important;
+        }
         .dpad button:hover { background: var(--button-color-light); }
-        .dpad button:active { background: var(--main-color); }
-        .dpad button:active, .dpad button.pressed { background: var(--main-color); }
+        .dpad button:focus { outline: none !important; box-shadow: none !important; }
+        .dpad button:focus-visible { outline: none !important; }
+        .dpad button:active { background: var(--button-color) !important; }
+        .dpad button.pressed {
+            opacity: 0.6 !important;
+            outline: none !important;
+        }
 
         .dpad button { font-size: 26px; line-height: 1; }
         .dpad button.home { font-size: inherit; display: flex; align-items: center; justify-content: center; }
@@ -2394,6 +2403,9 @@
 
                 // ── PTZ wiring ─────────────────────────────────
                 const getIp = () => getSlotIp(i);
+                let activePtzDir = null;  // Track currently active direction for this slot
+                let activePtzBtn = null;  // Track currently active button for this slot
+                let isMoving = false;     // Track if a movement command was sent
 
                 // D-pad: pointerdown starts move, pointerup/pointercancel stops.
                 // Using Pointer Events avoids the 300 ms synthetic-mouse delay on
@@ -2409,43 +2421,51 @@
                         return;
                     }
                     const getPtzSpeed = () => parseInt(sec.querySelector('.ptz-speed')?.value || 8);
-                    let ptzPointerId = null; // track which pointer started the move
 
                     const start = (e) => {
-                        if (ptzPointerId !== null) return; // already moving
                         const ip = getIp(); if (!ip) return;
                         e.preventDefault();
-                        btn.setPointerCapture(e.pointerId);
-                        ptzPointerId = e.pointerId;
+
+                        activePtzDir = dir;
+                        activePtzBtn = btn;
+                        isMoving = true;
                         btn.classList.add('pressed');
                         const spd = getPtzSpeed();
                         activeMove = { ip, cmd: 'ptzstop' };
                         cgi(ip, `/cgi-bin/ptzctrl.cgi?ptzcmd&${dir}&${spd}&${spd}`);
-                        // Keepalive: resend every 600 ms so the camera doesn't
-                        // auto-stop — longer interval means fewer in-flight requests
-                        // and less chance of a stop racing with a keepalive.
-                        activeInterval = setInterval(() => {
-                            if (ptzPointerId !== null)
-                                cgi(ip, `/cgi-bin/ptzctrl.cgi?ptzcmd&${dir}&${spd}&${spd}`);
-                        }, 600);
                     };
 
-                    const stop = (e) => {
-                        if (e && e.pointerId !== ptzPointerId) return; // different pointer
-                        if (ptzPointerId === null) return; // not moving
-                        ptzPointerId = null;
-                        btn.classList.remove('pressed');
-                        clearInterval(activeInterval); activeInterval = null;
+                    const stop = () => {
                         const ip = getIp();
+                        activePtzDir = null;
+                        isMoving = false;
+                        if (activePtzBtn) activePtzBtn.classList.remove('pressed');
+                        activePtzBtn = null;
                         activeMove = null;
                         if (ip) cgi(ip, '/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop');
                     };
 
-                    btn.addEventListener('pointerdown',   start);
-                    btn.addEventListener('pointerup',     stop);
+                    btn.addEventListener('pointerdown', start);
+                    btn.addEventListener('pointerup', stop);
                     btn.addEventListener('pointercancel', stop);
+                    btn.addEventListener('touchstart', start);
+                    btn.addEventListener('touchend', stop);
+                    btn.addEventListener('touchcancel', stop);
+                    btn.addEventListener('mousedown', start);
+                    btn.addEventListener('mouseup', stop);
                     btn.addEventListener('contextmenu', e => e.preventDefault());
                 });
+
+                // Fallback: send stop on any pointer/touch/mouse release (only if movement active)
+                const sendPtzStop = () => {
+                    if (!isMoving) return;
+                    const ip = getIp();
+                    isMoving = false;
+                    if (ip) cgi(ip, '/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop');
+                };
+                document.addEventListener('pointerup', sendPtzStop);
+                document.addEventListener('touchend', sendPtzStop);
+                document.addEventListener('mouseup', sendPtzStop);
 
                 // Zoom slider (VISCA direct)
                 const zoomSlider = sec.querySelector('.zoom-slider');

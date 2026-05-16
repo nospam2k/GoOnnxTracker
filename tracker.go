@@ -326,28 +326,11 @@ func (t *Tracker) handleTracking(detection *Detection) {
 		dir = "right"
 	}
 
-	minSpeed := 2
-	if minSpeed > maxSpeed {
-		minSpeed = maxSpeed
-	}
-	distFromCenter := offset
-	if distFromCenter < 0 {
-		distFromCenter = -distFromCenter
-	}
-	normalised := (distFromCenter - deadZoneHalfWidth) / (0.5 - deadZoneHalfWidth)
-	if normalised < 0 {
-		normalised = 0
-	}
-	if normalised > 1 {
-		normalised = 1
-	}
-	speed := minSpeed + int(normalised*float64(maxSpeed-minSpeed))
-
-	speedBucket := speed / 2
+	speedBucket := maxSpeed / 2
 	stateKey := fmt.Sprintf("%s-%d", dir, speedBucket)
 	if stateKey != t.lastDir {
 		t.lastDir = stateKey
-		t.sendCGI(fmt.Sprintf("/cgi-bin/ptzctrl.cgi?ptzcmd&%s&%d&%d", dir, speed, speed))
+		t.sendCGI(fmt.Sprintf("/cgi-bin/ptzctrl.cgi?ptzcmd&%s&%d&%d", dir, maxSpeed, maxSpeed))
 	}
 	t.lastBox = &box
 }
