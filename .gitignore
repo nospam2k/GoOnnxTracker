@@ -7,6 +7,7 @@ gotracker-*
 *.dylib
 *.so
 *.o
+*.syso
 
 # IDE & system
 .DS_Store
@@ -15,6 +16,7 @@ gotracker-*
 .idea/
 *.swp
 *.swo
+git_cleanup.sh
 
 # Python
 /pythonft/venv/
