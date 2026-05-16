@@ -25,13 +25,15 @@ var (
 
 	mu         sync.RWMutex
 	cameraURL  string
+	cameraIP   string // extracted explicitly by /config, avoids re-parsing the URL on every frame
 	hub        *Hub
 	inference  *Inference
 	tracker    *Tracker
 	trackingCh chan []byte
 
-	configDir   = "./config"
-	camerasFile = filepath.Join(configDir, "cameras.json")
+	configDir        = "./config"
+	camerasFile      = filepath.Join(configDir, "cameras.json")
+	iecProfilesFile  = filepath.Join(configDir, "iec-profiles.json")
 )
 
 // ── Web server lifecycle ───────────────────────────────────────
@@ -102,6 +104,8 @@ func StartWebServer(logChan chan string) error {
 		mux.HandleFunc("/api/visca", handleVISCA)
 		mux.HandleFunc("/api/local-subnet", handleLocalSubnet)
 		mux.HandleFunc("/api/scan", handleScan)
+		mux.HandleFunc("/api/iec-profiles", handleIECProfiles)
+		mux.HandleFunc("/api/iec-profiles/", handleIECProfileByName)
 		mux.Handle("/", http.FileServer(http.Dir("./static")))
 
 		srv := &http.Server{
@@ -190,6 +194,13 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
+}
+
+// GetCameraIP returns the currently configured camera IP without re-parsing the URL.
+func GetCameraIP() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	return cameraIP
 }
 
 func handleGetCameras(w http.ResponseWriter, r *http.Request) {
@@ -618,6 +629,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 
 	var cfg struct {
 		CameraURL string `json:"cameraUrl"`
+		CameraIP  string `json:"cameraIp"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -626,7 +638,117 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 
 	mu.Lock()
 	cameraURL = cfg.CameraURL
+	if cfg.CameraIP != "" {
+		cameraIP = cfg.CameraIP
+	} else {
+		cameraIP = extractIPFromURL(cfg.CameraURL)
+	}
 	mu.Unlock()
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// ── IEC Profile persistence ─────────────────────────────────
+
+type IECProfile struct {
+	Settings map[string]interface{} `json:"settings"`
+	Saved    string                 `json:"saved"`
+}
+
+func loadIECProfiles() (map[string]IECProfile, error) {
+	data, err := os.ReadFile(iecProfilesFile)
+	if os.IsNotExist(err) {
+		return map[string]IECProfile{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var profiles map[string]IECProfile
+	if err := json.Unmarshal(data, &profiles); err != nil {
+		return nil, err
+	}
+	return profiles, nil
+}
+
+func saveIECProfiles(profiles map[string]IECProfile) error {
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(profiles, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(iecProfilesFile, data, 0644)
+}
+
+// GET /api/iec-profiles — return all profiles
+// POST /api/iec-profiles — save a new profile { name, settings }
+func handleIECProfiles(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		profiles, err := loadIECProfiles()
+		if err != nil {
+			Log("[IEC] load error: %v", err)
+			writeJSON(w, 500, map[string]any{"error": "failed to load profiles"})
+			return
+		}
+		writeJSON(w, 200, profiles)
+
+	case http.MethodPost:
+		var body struct {
+			Name     string                 `json:"name"`
+			Settings map[string]interface{} `json:"settings"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" || body.Settings == nil {
+			writeJSON(w, 400, map[string]any{"error": "missing name or settings"})
+			return
+		}
+		profiles, err := loadIECProfiles()
+		if err != nil {
+			writeJSON(w, 500, map[string]any{"error": "failed to load profiles"})
+			return
+		}
+		profiles[body.Name] = IECProfile{
+			Settings: body.Settings,
+			Saved:    time.Now().UTC().Format(time.RFC3339),
+		}
+		if err := saveIECProfiles(profiles); err != nil {
+			Log("[IEC] save error: %v", err)
+			writeJSON(w, 500, map[string]any{"error": "failed to save profile"})
+			return
+		}
+		writeJSON(w, 200, map[string]any{"ok": true})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// DELETE /api/iec-profiles/{name} — delete a named profile
+func handleIECProfileByName(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	name := strings.TrimPrefix(r.URL.Path, "/api/iec-profiles/")
+	if name == "" {
+		writeJSON(w, 400, map[string]any{"error": "missing profile name"})
+		return
+	}
+	profiles, err := loadIECProfiles()
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"error": "failed to load profiles"})
+		return
+	}
+	if _, ok := profiles[name]; !ok {
+		writeJSON(w, 404, map[string]any{"error": "profile not found"})
+		return
+	}
+	delete(profiles, name)
+	if err := saveIECProfiles(profiles); err != nil {
+		Log("[IEC] delete error: %v", err)
+		writeJSON(w, 500, map[string]any{"error": "failed to save profiles"})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true})
 }

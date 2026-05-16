@@ -125,9 +125,7 @@ func (t *Tracker) cgiWorker() {
 		case <-t.ctx.Done():
 			return
 		case cmd := <-t.cgiCh:
-			mu.RLock()
-			ip := extractIPFromURL(cameraURL)
-			mu.RUnlock()
+			ip := GetCameraIP()
 			if ip == "" {
 				continue
 			}
@@ -269,9 +267,7 @@ func (t *Tracker) handleTracking(detection *Detection) {
 		return
 	}
 
-	mu.RLock()
-	ip := extractIPFromURL(cameraURL)
-	mu.RUnlock()
+	ip := GetCameraIP()
 	if ip == "" {
 		return
 	}
@@ -362,6 +358,40 @@ func (t *Tracker) handleTrackingLost() {
 		t.sendCGI("/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop")
 	}
 	t.lastBox = nil
+
+	// Execute the configured lost-target behavior from cameras.json.
+	config := configCache.load(camerasFile)
+	if config == nil {
+		return
+	}
+
+	ip := GetCameraIP()
+	if ip == "" {
+		return
+	}
+
+	slot := findCameraSlot(config, ip)
+	settings := getSettings(config, "trackingSettings", slot)
+	if settings == nil {
+		return
+	}
+
+	behavior, _ := settings["lostBehavior"].(string)
+	switch behavior {
+	case "preset":
+		presetNum := 1
+		if p, ok := settings["lostPreset"]; ok {
+			switch v := p.(type) {
+			case float64:
+				presetNum = int(v)
+			case string:
+				fmt.Sscanf(v, "%d", &presetNum)
+			}
+		}
+		t.sendCGI(fmt.Sprintf("/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&%d", presetNum))
+	default:
+		// "stop" or anything else: PTZ stop already sent above.
+	}
 }
 
 // sendCGI queues a PTZ command. If the queue is full the command is dropped

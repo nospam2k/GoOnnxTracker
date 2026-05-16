@@ -1410,11 +1410,6 @@
         }
         connectWS();
 
-        function getDeadZone(slot) {
-            if (!trackingDeadZone[slot]) trackingDeadZone[slot] = { left: 0.46, right: 0.54 };
-            return trackingDeadZone[slot];
-        }
-
         // Cached once — was being rebuilt as an array with O(n) .includes() on every WS frame
         const FACE_KP_SET = new Set(['left_ear','left_eye','nose','right_eye','right_ear']);
 
@@ -1814,7 +1809,6 @@
         }
 
         // ── Face tracking state ────────────────────────────────
-        const trackingWorkers  = {};   // slot → Worker
         const trackingActive   = {};   // slot → boolean
         const trackingMaxSpeed = {};   // slot → number
         const ptzSpeed         = {};   // slot → number (1–24, default 8)
@@ -2094,22 +2088,6 @@
 
             img.onload = () => {
                 if (!active) return;
-                // Feed frame to tracking worker if enabled — skip canvas draw otherwise
-                if (trackingActive[slot] && trackingWorkers[slot]) {
-                    // Always redraw overlay when tracking is on
-                    drawTrackingOverlay(slot, null, null);
-                    createImageBitmap(img).then(bitmap => {
-                        if (trackingActive[slot] && trackingWorkers[slot]) {
-                            const dz = getDeadZone(slot);
-                            trackingWorkers[slot].postMessage(
-                                { bitmap, width: img.naturalWidth || 1920, height: img.naturalHeight || 1080, maxSpeed: trackingMaxSpeed[slot] || 10, deadLeft: dz.left, deadRight: dz.right },
-                                [bitmap]
-                            );
-                        } else {
-                            bitmap.close();
-                        }
-                    }).catch(() => {});
-                }
                 next();
             };
             img.onerror = () => { if (active) setTimeout(next, 1000); };
@@ -3005,8 +2983,6 @@
                 const loadIECProfiles = async () => {
                     const listEl = sec.querySelector('.iec-profile-list');
                     try {
-                        // IEC profiles endpoints not yet implemented in backend
-                        return;
                         const profiles = await fetch('/api/iec-profiles').then(r => r.json());
                         listEl.innerHTML = '';
                         const names = Object.keys(profiles);
