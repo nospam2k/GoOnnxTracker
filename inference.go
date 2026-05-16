@@ -86,8 +86,19 @@ var resizePool = sync.Pool{
 	},
 }
 
+const (
+	maxSizeRatio     = 3.0 // area ratio beyond which a detection is treated as a different-distance interloper
+	switchLockFrames = 15  // consecutive frames a candidate must hold before we commit to a target switch
+	edgeMargin       = 0.15 // fraction of frame width/height considered "at the edge"
+	edgeClearFrames  = 8   // consecutive edge frames before history is cleared
+)
+
 type Inference struct {
-	lastBox *Box
+	lastBox       *Box
+	lastDetection *Detection // last accepted detection; returned during lock so camera holds position
+	lockCandidate *Detection // switch candidate under probation
+	lockCount     int        // how many consecutive frames lockCandidate has held
+	edgeFrames    int        // consecutive frames the detection has been at the frame edge
 }
 
 func (inf *Inference) init() error {
@@ -148,26 +159,72 @@ func (inf *Inference) Infer(jpegData []byte) (*Detection, error) {
 	outputData := unsafe.Slice((*float32)(unsafe.Pointer(outputPtr)), totalElements)
 
 	detection := inf.pickBestDetection(outputData, numDets, elementsPerDet)
-	if detection != nil {
-		inf.lastBox = &detection.Box
-	} else {
+
+	if detection == nil {
 		inf.lastBox = nil
+		inf.lastDetection = nil
+		inf.lockCandidate = nil
+		inf.lockCount = 0
+		return nil, nil
 	}
+
+	// A switch is needed when the candidate has no overlap with the last accepted box
+	// OR is dramatically larger/smaller (interloper at different depth).
+	needsLock := inf.lastBox != nil &&
+		(boxOverlap(&detection.Box, inf.lastBox) == 0 || !sizeCompatible(&detection.Box, inf.lastBox))
+
+	if needsLock {
+		if inf.lockCandidate != nil && boxOverlap(&detection.Box, &inf.lockCandidate.Box) > 0 {
+			inf.lockCount++
+		} else {
+			inf.lockCandidate = detection
+			inf.lockCount = 1
+		}
+		if inf.lockCount < switchLockFrames {
+			// Hold on last accepted detection while candidate is on probation.
+			return inf.lastDetection, nil
+		}
+		// Candidate held long enough — commit to the switch.
+		inf.lockCandidate = nil
+		inf.lockCount = 0
+	} else {
+		inf.lockCandidate = nil
+		inf.lockCount = 0
+	}
+
+	// If the detection stays near the frame edge for several frames, the subject
+	// is likely walking out. Clear history so re-entry from a new position
+	// doesn't trigger the lock against stale edge data.
+	cx := detection.Box.X + detection.Box.W/2
+	if cx < edgeMargin || cx > 1.0-edgeMargin {
+		inf.edgeFrames++
+		if inf.edgeFrames >= edgeClearFrames {
+			inf.lastBox = nil
+			inf.lastDetection = nil
+			inf.lockCandidate = nil
+			inf.lockCount = 0
+			inf.edgeFrames = 0
+			return detection, nil
+		}
+	} else {
+		inf.edgeFrames = 0
+	}
+
+	inf.lastBox = &detection.Box
+	inf.lastDetection = detection
 	return detection, nil
 }
 
 // pickBestDetection operates directly on the C output slice — no intermediate
-// [][]float32 allocation.
+// [][]float32 allocation. Size-compatible detections (similar area to lastBox)
+// are preferred over incompatible ones so an interloper at a different depth
+// doesn't displace the tracked subject.
 func (inf *Inference) pickBestDetection(data []float32, numDets, stride int) *Detection {
-	var best *Detection
-	maxOverlap := 0.0
-	maxArea := 0.0
-	var areaFallback *Detection
+	var compatible, incompatible []Detection
 
 	for i := 0; i < numDets; i++ {
 		det := data[i*stride : i*stride+stride]
 
-		// Only score face keypoints (indices 0–4).
 		maxConf := 0.0
 		for j := 0; j < 5; j++ {
 			if conf := float64(det[j*3+2]); conf > maxConf {
@@ -183,24 +240,75 @@ func (inf *Inference) pickBestDetection(data []float32, numDets, stride int) *De
 			continue
 		}
 
-		area := d.Box.W * d.Box.H
-		if area > maxArea {
-			maxArea = area
-			areaFallback = &d
+		if inf.lastBox == nil || sizeCompatible(&d.Box, inf.lastBox) {
+			compatible = append(compatible, d)
+		} else {
+			incompatible = append(incompatible, d)
 		}
+	}
 
-		if inf.lastBox != nil {
-			if overlap := boxOverlap(&d.Box, inf.lastBox); overlap > maxOverlap {
-				maxOverlap = overlap
-				best = &d
+	var lastCX, lastCY float64
+	if inf.lastBox != nil {
+		lastCX = inf.lastBox.X + inf.lastBox.W/2
+		lastCY = inf.lastBox.Y + inf.lastBox.H/2
+	}
+
+	if best := pickBest(compatible, inf.lastBox, lastCX, lastCY); best != nil {
+		return best
+	}
+	return pickBest(incompatible, inf.lastBox, lastCX, lastCY)
+}
+
+// pickBest selects from a slice of detections using: overlap > proximity > area.
+func pickBest(dets []Detection, lastBox *Box, lastCX, lastCY float64) *Detection {
+	if len(dets) == 0 {
+		return nil
+	}
+	var best *Detection
+	maxOverlap := 0.0
+	minDist := -1.0
+	var proximityFallback *Detection
+	maxArea := 0.0
+	var areaFallback *Detection
+
+	for i := range dets {
+		d := &dets[i]
+		if area := d.Box.W * d.Box.H; area > maxArea {
+			maxArea = area
+			areaFallback = d
+		}
+		if lastBox != nil {
+			if ov := boxOverlap(&d.Box, lastBox); ov > maxOverlap {
+				maxOverlap = ov
+				best = d
+			}
+			cx := d.Box.X + d.Box.W/2
+			cy := d.Box.Y + d.Box.H/2
+			dx, dy := cx-lastCX, cy-lastCY
+			if dist := dx*dx + dy*dy; minDist < 0 || dist < minDist {
+				minDist = dist
+				proximityFallback = d
 			}
 		}
 	}
 
-	if best == nil {
-		best = areaFallback
+	if best != nil {
+		return best
 	}
-	return best
+	if proximityFallback != nil {
+		return proximityFallback
+	}
+	return areaFallback
+}
+
+// sizeCompatible returns true if box's area is within maxSizeRatio of last.
+func sizeCompatible(box, last *Box) bool {
+	lastArea := last.W * last.H
+	if lastArea == 0 {
+		return true
+	}
+	ratio := (box.W * box.H) / lastArea
+	return ratio <= maxSizeRatio && ratio >= 1.0/maxSizeRatio
 }
 
 func parseDetection(data []float32) Detection {
