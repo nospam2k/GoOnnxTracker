@@ -120,7 +120,7 @@ func StartWebServer(logChan chan string) error {
 			srv.Shutdown(shutdownCtx)
 		}()
 
-		Log("OnnxTracker running at http://localhost%s", *addr)
+		Log("OnnxTracker running at http://%s%s", localIP(), *addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			Log("Server error: %v", err)
 		}
@@ -156,6 +156,15 @@ func (w *logChannelWriter) Write(p []byte) (n int, err error) {
 		}
 	}
 	return len(p), nil
+}
+
+func localIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return "localhost"
+	}
+	defer conn.Close()
+	return conn.LocalAddr().(*net.UDPAddr).IP.String()
 }
 
 func serverMain() {

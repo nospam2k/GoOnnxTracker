@@ -28,12 +28,18 @@ func main() {
 	// Initialize log channel first so logging works during init
 	logChannel = make(chan string, 100)
 
+	// Create directories if they don't exist
+	for _, dir := range []string{"config", "static"} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			showErrorDialog(fmt.Sprintf("Failed to create directory %s: %v", dir, err))
+			return
+		}
+	}
+
 	// Check for required files before starting
 	requiredFiles := []string{
 		"model.onnx",
 		"onnxruntime.dll",
-		"config",
-		"static",
 		"static/index.html",
 	}
 	for _, file := range requiredFiles {
