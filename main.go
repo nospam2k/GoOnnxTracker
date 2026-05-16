@@ -28,6 +28,22 @@ func main() {
 	// Initialize log channel first so logging works during init
 	logChannel = make(chan string, 100)
 
+	// Check for required files before starting
+	requiredFiles := []string{
+		"model.onnx",
+		"onnxruntime.dll",
+		"config",
+		"static",
+		"static/index.html",
+	}
+	for _, file := range requiredFiles {
+		if _, err := os.Stat(file); err != nil {
+			msg := fmt.Sprintf("Missing required file: %s", file)
+			showErrorDialog(msg)
+			return
+		}
+	}
+
 	enforceSingleInstance()
 	Log("OnnxTracker Version: %s", version)
 
