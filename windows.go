@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"runtime"
 	"syscall"
 	"unsafe"
@@ -46,12 +47,18 @@ func (g *WindowsGUI) Run(logChan chan string) error {
 		Background: g.windowBrush,
 		ClassName:  className,
 	}
-	winapi.RegisterClassEx(&wndClass)
+	_, err := winapi.RegisterClassEx(&wndClass)
+	if err != nil {
+		return fmt.Errorf("failed to register window class: %w", err)
+	}
 
-	g.mainWindow, _ = winapi.CreateWindowEx(
+	g.mainWindow, err = winapi.CreateWindowEx(
 		0, className, winapi.UTF16PtrFromString("OnnxTracker Control Panel"),
 		winapi.WS_OVERLAPPEDWINDOW, 100, 100, 500, 300, 0, 0, g.hInstance, 0,
 	)
+	if err != nil || g.mainWindow == 0 {
+		return fmt.Errorf("failed to create window: %w", err)
+	}
 
 	useDarkMode := int32(0)
 	if g.currentTheme == theme.Dark {

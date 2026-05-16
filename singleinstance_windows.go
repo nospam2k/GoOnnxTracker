@@ -25,8 +25,8 @@ func enforceSingleInstance() {
 
 	name, err := syscall.UTF16PtrFromString(mutexName)
 	if err != nil {
-		// Extremely unlikely; treat as fatal.
-		fmt.Fprintf(os.Stderr, "singleinstance: UTF16 conversion failed: %v\n", err)
+		msg := fmt.Sprintf("singleinstance: UTF16 conversion failed: %v", err)
+		fmt.Fprintf(os.Stderr, "%s\n", msg)
 		os.Exit(1)
 	}
 

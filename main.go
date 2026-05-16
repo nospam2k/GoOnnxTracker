@@ -4,6 +4,8 @@ package main
 
 import (
 	"flag"
+	"fmt"
+	"os"
 	"runtime"
 )
 
@@ -33,7 +35,9 @@ func main() {
 	if inference == nil {
 		inference = &Inference{}
 		if err := inference.init(); err != nil {
-			Log("Failed to initialize inference: %v", err)
+			msg := fmt.Sprintf("Failed to initialize inference: %v", err)
+			Log(msg)
+			fmt.Fprintf(os.Stderr, "%s\n", msg)
 			return
 		}
 	}
@@ -56,11 +60,15 @@ func main() {
 
 	// Start server before GUI so it's always running on launch
 	if err := StartWebServer(logChannel); err != nil {
-		Log("Failed to start server: %v", err)
+		msg := fmt.Sprintf("Failed to start server: %v", err)
+		Log(msg)
+		fmt.Fprintf(os.Stderr, "%s\n", msg)
 	}
 
 	// Run platform-specific GUI (blocks)
 	if err := gui.Run(logChannel); err != nil {
-		Log("GUI error: %v", err)
+		msg := fmt.Sprintf("GUI error: %v", err)
+		Log(msg)
+		fmt.Fprintf(os.Stderr, "%s\n", msg)
 	}
 }
