@@ -149,3 +149,15 @@ func (g *WindowsGUI) Cleanup() {
 	winapi.DeleteObject(g.windowBrush)
 	winapi.DeleteObject(g.editBrush)
 }
+
+// showErrorDialog shows an error message using Windows MessageBox
+func showErrorDialog(msg string) {
+	user32 := syscall.NewLazyDLL("user32.dll")
+	msgBox := user32.NewProc("MessageBoxW")
+
+	title := winapi.UTF16PtrFromString("OnnxTracker Error")
+	text := winapi.UTF16PtrFromString(msg)
+
+	// MB_OK | MB_ICONERROR = 0x10
+	msgBox.Call(0, uintptr(unsafe.Pointer(text)), uintptr(unsafe.Pointer(title)), 0x10)
+}

@@ -52,3 +52,7 @@ func onCocoaAppReady() {
         }
     }()
 }
+
+func showErrorDialog(msg string) {
+	// On macOS, errors go to the log window or stderr
+}

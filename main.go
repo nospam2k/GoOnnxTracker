@@ -38,6 +38,7 @@ func main() {
 			msg := fmt.Sprintf("Failed to initialize inference: %v", err)
 			Log(msg)
 			fmt.Fprintf(os.Stderr, "%s\n", msg)
+			showErrorDialog(msg)
 			return
 		}
 	}
@@ -63,6 +64,7 @@ func main() {
 		msg := fmt.Sprintf("Failed to start server: %v", err)
 		Log(msg)
 		fmt.Fprintf(os.Stderr, "%s\n", msg)
+		showErrorDialog(msg)
 	}
 
 	// Run platform-specific GUI (blocks)
@@ -70,5 +72,6 @@ func main() {
 		msg := fmt.Sprintf("GUI error: %v", err)
 		Log(msg)
 		fmt.Fprintf(os.Stderr, "%s\n", msg)
+		showErrorDialog(msg)
 	}
 }
