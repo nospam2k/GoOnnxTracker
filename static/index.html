@@ -37,7 +37,7 @@
         }
 
         button {
-            touch-action: none;
+            touch-action: manipulation;
             -webkit-touch-callout: none;
             -webkit-user-drag: none;
             -webkit-app-region: no-drag;
@@ -58,7 +58,6 @@
             height: 100vh;
             overflow: hidden;
             border-right: 1px solid #2e2e32;
-            transition: width 0.2s ease, min-width 0.2s ease;
         }
 
         body.sidebar-collapsed #sidebar {
@@ -124,7 +123,6 @@
             cursor: pointer;
             font-size: 13px;
             font-family: inherit;
-            transition: background 0.15s;
         }
 
         #add-camera-btn:hover {
@@ -152,7 +150,6 @@
             padding: 8px 6px;
             cursor: pointer;
             border-left: 3px solid transparent;
-            transition: background 0.15s, border-color 0.15s;
             user-select: none;
             position: relative;
         }
@@ -232,7 +229,6 @@
             text-align: center;
             cursor: pointer;
             opacity: 0;
-            transition: opacity 0.15s;
             z-index: 10;
             user-select: none;
             border: none;
@@ -249,7 +245,6 @@
             right: 4px;
             cursor: grab;
             opacity: 0;
-            transition: opacity 0.15s;
             color: var(--text-color-dark);
             font-size: 12px;
             line-height: 1;
@@ -309,7 +304,6 @@
             color: var(--text-color-dark);
             border-bottom: 2px solid transparent;
             margin-bottom: -1px;
-            transition: color 0.15s, border-color 0.15s;
             user-select: none;
         }
 
@@ -367,7 +361,6 @@
             cursor: pointer;
             font-size: 13px;
             font-family: inherit;
-            transition: background 0.15s;
         }
 
         #modal-cancel {
@@ -399,7 +392,6 @@
             cursor: pointer;
             font-size: 13px;
             font-family: inherit;
-            transition: background 0.15s;
             margin-bottom: 12px;
         }
 
@@ -430,7 +422,6 @@
             padding: 7px 8px;
             border-radius: 4px;
             cursor: pointer;
-            transition: background 0.15s;
             font-size: 13px;
         }
 
@@ -464,7 +455,6 @@
             text-align: center;
             cursor: pointer;
             opacity: 0;
-            transition: opacity 0.15s;
             z-index: 2;
         }
 
@@ -498,7 +488,6 @@
             padding: 5px;
             border-radius: 4px;
             color: var(--text-color-dark);
-            transition: color 0.15s, background 0.15s;
             line-height: 0;
         }
 
@@ -535,7 +524,7 @@
             overflow: hidden;
             cursor: pointer;
             position: relative;
-            transition: border-color 0.15s;
+            contain: layout style;
         }
 
         .cam-section.selected {
@@ -593,6 +582,7 @@
             top: 0; left: 0;
             width: 100%; height: 100%;
             pointer-events: none;
+            will-change: contents;
         }
 
         .cam-stream img {
@@ -600,6 +590,7 @@
             height: 100%;
             display: block;
             object-fit: contain;
+            will-change: transform;
         }
 
         .cam-section.wide { flex-direction: row; }
@@ -646,7 +637,6 @@
             color: var(--text-color-dark);
             border-bottom: 2px solid transparent;
             margin-bottom: -1px;
-            transition: color 0.15s, border-color 0.15s;
             user-select: none;
             white-space: nowrap;
         }
@@ -719,13 +709,13 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: background 0.1s;
             user-select: none;
             -webkit-user-select: none;
-            touch-action: none;
+            touch-action: none;   /* dpad only: must block scroll for hold-move */
             -webkit-touch-callout: none;
             -webkit-user-drag: none;
             -webkit-app-region: no-drag;
+            -ms-touch-action: none;
         }
 
         .dpad button:hover { background: var(--button-color-light); }
@@ -758,7 +748,6 @@
             font-size: 14px;
             line-height: 1;
             font-family: inherit;
-            transition: background 0.1s;
         }
         .nudge-btn:hover  { background: var(--button-color-light); }
         .nudge-btn:active { background: var(--main-color); color: #fff; }
@@ -775,7 +764,6 @@
             font-size: 12px;
             font-weight: bold;
             font-family: inherit;
-            transition: background 0.1s;
         }
         .af-btn:hover { background: var(--button-color-light); }
         .af-btn.af-on { background: var(--main-color); color: #fff; }
@@ -811,6 +799,7 @@
             -webkit-touch-callout: none;
             -webkit-user-drag: none;
             -webkit-app-region: no-drag;
+            -ms-touch-action: none;
         }
 
         .preset-btn:hover { background: var(--button-color-light); }
@@ -1426,6 +1415,9 @@
             return trackingDeadZone[slot];
         }
 
+        // Cached once — was being rebuilt as an array with O(n) .includes() on every WS frame
+        const FACE_KP_SET = new Set(['left_ear','left_eye','nose','right_eye','right_ear']);
+
         function handlePoseMessage(data) {
             const slot = 0;
             const ip = getSlotIp ? getSlotIp(slot) : null;
@@ -1453,8 +1445,7 @@
             // Always draw the overlay with the pose data
             drawTrackingOverlay(slot, data.keypoints, data.box);
 
-            const faceNames = ['left_ear','left_eye','nose','right_eye','right_ear'];
-            const faceKps = data.keypoints.filter(k => faceNames.includes(k.name));
+            const faceKps = data.keypoints.filter(k => FACE_KP_SET.has(k.name));
             const used = faceKps.length >= 2 ? faceKps : data.keypoints;
             const cx = used.length > 0 ? used.reduce((s,k) => s + k.x, 0) / used.length : 0.5;
 
@@ -1481,6 +1472,7 @@
         let cameras      = [];   // [{ id, name, ip }]
         let activeCamera = null;
         let dragSrcIndex = null;
+        let dragOverIndex = null;
 
         // ── Modal shared ───────────────────────────────────────
         const overlay = document.getElementById('modal-overlay');
@@ -1775,6 +1767,12 @@
         let activeMove = null;     // { ip, cmd: 'ptzstop' | 'zoomstop' | 'focusstop' }
         let activeInterval = null; // repeat-send interval for current move
 
+        // emergencyStop is the last-resort safety net for cases where the
+        // normal pointerup/pointercancel on the button didn't fire — e.g. the
+        // browser tab was backgrounded or the window lost focus.
+        // We deliberately do NOT attach it to mouseup/touchend/pointerup on
+        // document; those events would race with the per-button stop() and
+        // cause the camera to receive stop→start→stop in rapid succession.
         function emergencyStop() {
             if (activeInterval) { clearInterval(activeInterval); activeInterval = null; }
             if (!activeMove) return;
@@ -1782,13 +1780,8 @@
             activeMove = null;
             const stopCmd = `/api/cgi/${ip}?q=${encodeURIComponent(`/cgi-bin/ptzctrl.cgi?ptzcmd&${cmd}`)}`;
             fetch(stopCmd, { keepalive: true }).catch(() => {});
-            setTimeout(() => fetch(stopCmd, { keepalive: true }).catch(() => {}), 150);
-            setTimeout(() => fetch(stopCmd, { keepalive: true }).catch(() => {}), 400);
         }
 
-        document.addEventListener('mouseup',       emergencyStop);
-        document.addEventListener('touchend',      emergencyStop);
-        document.addEventListener('touchcancel',   emergencyStop);
         window.addEventListener('blur',            emergencyStop);
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') emergencyStop();
@@ -1868,6 +1861,7 @@
         // Global dead zone drag state
         let dzDrag = null; // { slot, side, streamEl }
 
+        let dzSaveTimer = null;
         document.addEventListener('mousemove', e => {
             if (!dzDrag) return;
             const dz   = getDeadZone(dzDrag.slot);
@@ -1882,12 +1876,19 @@
             if (!trackingSettings[dzDrag.slot]) trackingSettings[dzDrag.slot] = {};
             trackingSettings[dzDrag.slot].deadZone = { ...dz };
             drawTrackingOverlay(dzDrag.slot, null, null);
-            saveCameras();
+            // Throttle saves to once per 300ms during drag
+            clearTimeout(dzSaveTimer);
+            dzSaveTimer = setTimeout(saveCameras, 300);
         });
 
         document.addEventListener('mouseup', () => {
             if (dzDrag) { dzDrag.streamEl.style.cursor = ''; dzDrag = null; }
         });
+
+        // Canvas 2D context cache — getContext is cheap but not free; avoid per-frame lookup
+        const canvasCtxCache = {};
+        // Dirty tracking — skip redraw when nothing has changed
+        const overlayLastState = {}; // slot → { left, right, kpCount }
 
         function drawTrackingOverlay(slot, keypoints, box) {
             const sec = document.querySelector(`.cam-section[data-slot="${slot}"]`);
@@ -1896,11 +1897,9 @@
             if (!canvas) return;
             const img = sec.querySelector('img');
 
-            // Get container dimensions from cam-stream for accurate canvas sizing
             const stream = sec.querySelector('.cam-stream');
             if (!stream) return;
 
-            // Prefer clientWidth/Height from img, fall back to stream, then fixed size
             let CW = img.clientWidth;
             let CH = img.clientHeight;
             if (CW < 50 || CH < 50) {
@@ -1908,11 +1907,35 @@
                 CH = stream.clientHeight || 540;
             }
 
-            // Set actual canvas buffer size
-            canvas.width = CW;
-            canvas.height = CH;
+            const dz = getDeadZone(slot);
+            const kpCount = keypoints ? keypoints.length : 0;
 
-            const ctx = canvas.getContext('2d', { willReadFrequently: false });
+            // Dirty check — skip draw if nothing changed
+            const prev = overlayLastState[slot];
+            if (prev &&
+                prev.left === dz.left && prev.right === dz.right &&
+                prev.kpCount === kpCount && kpCount === 0 &&
+                prev.CW === CW && prev.CH === CH) {
+                return;
+            }
+            overlayLastState[slot] = { left: dz.left, right: dz.right, kpCount, CW, CH };
+
+            // Only resize the canvas buffer when dimensions actually change —
+            // resetting width/height every frame forces a full GPU buffer
+            // reallocation and is the single biggest source of frame jank on tablet.
+            if (canvas.width !== CW || canvas.height !== CH) {
+                canvas.width  = CW;
+                canvas.height = CH;
+                // Invalidate cached context after resize (browser may replace it)
+                delete canvasCtxCache[slot];
+            }
+
+            // Cache the 2D context — getContext on every frame causes internal
+            // hash-map lookup in the browser engine on every single draw call.
+            if (!canvasCtxCache[slot]) {
+                canvasCtxCache[slot] = canvas.getContext('2d', { willReadFrequently: false });
+            }
+            const ctx = canvasCtxCache[slot];
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             // Account for object-fit: contain letterboxing
@@ -1930,13 +1953,11 @@
             const py = ny => offY + ny * rendH;
 
             // Dead zone band with draggable boundary lines
-            const dz = getDeadZone(slot);
             const lx = px(dz.left), rx = px(dz.right);
 
             // Semi-transparent fill between the two boundaries
             ctx.fillStyle = 'rgba(255,255,255,0.08)';
             ctx.fillRect(lx, offY, rx - lx, rendH);
-
 
             // Dead zone box outline
             ctx.strokeStyle = '#ffff00';
@@ -2053,19 +2074,30 @@
         function startSnapshot(ip, img, slot) {
             stopSnapshot(slot);
             let active = true;
+            // 15 fps cap: minimum 66 ms between frame requests
+            const MIN_FRAME_MS = 67;
             sectionIntervals[slot] = { stop: () => { active = false; } };
+
+            let lastFrameTime = 0;
 
             const next = () => {
                 if (!active) return;
-                img.src = `/api/snapshot/${ip}?t=${Date.now()}`;
+                const now = performance.now();
+                const elapsed = now - lastFrameTime;
+                if (elapsed < MIN_FRAME_MS) {
+                    setTimeout(next, MIN_FRAME_MS - elapsed);
+                    return;
+                }
+                lastFrameTime = now;
+                img.src = `/api/snapshot/${ip}?t=${now|0}`;
             };
 
             img.onload = () => {
                 if (!active) return;
-                // Always clear stale keypoints on new frame; worker will redraw with fresh data
-                drawTrackingOverlay(slot, null, null);
-                // Feed frame to tracking worker if enabled
+                // Feed frame to tracking worker if enabled — skip canvas draw otherwise
                 if (trackingActive[slot] && trackingWorkers[slot]) {
+                    // Always redraw overlay when tracking is on
+                    drawTrackingOverlay(slot, null, null);
                     createImageBitmap(img).then(bitmap => {
                         if (trackingActive[slot] && trackingWorkers[slot]) {
                             const dz = getDeadZone(slot);
@@ -2385,51 +2417,56 @@
                 // ── PTZ wiring ─────────────────────────────────
                 const getIp = () => getSlotIp(i);
 
-                // D-pad: mousedown starts move, mouseup/mouseleave stops
+                // D-pad: pointerdown starts move, pointerup/pointercancel stops.
+                // Using Pointer Events avoids the 300 ms synthetic-mouse delay on
+                // tablets and eliminates the touch+mouse dual-fire race condition.
                 sec.querySelectorAll('[data-ptz]').forEach(btn => {
                     const dir = btn.dataset.ptz;
                     if (dir === 'home') {
-                        btn.addEventListener('click', () => {
+                        btn.addEventListener('pointerdown', e => {
+                            e.preventDefault();
                             const ip = getIp(); if (!ip) return;
                             cgi(ip, '/cgi-bin/ptzctrl.cgi?ptzcmd&home');
                         });
                         return;
                     }
                     const getPtzSpeed = () => parseInt(sec.querySelector('.ptz-speed')?.value || 8);
-                    let ptzPressed = false;
-                    const start = () => {
+                    let ptzPointerId = null; // track which pointer started the move
+
+                    const start = (e) => {
+                        if (ptzPointerId !== null) return; // already moving
                         const ip = getIp(); if (!ip) return;
-                        ptzPressed = true; const spd = getPtzSpeed(); activeMove = { ip, cmd: 'ptzstop' };
-                        cgi(ip, `/cgi-bin/ptzctrl.cgi?ptzcmd&${dir}&${spd}&${spd}`);
-                        activeInterval = setInterval(() => cgi(ip, `/cgi-bin/ptzctrl.cgi?ptzcmd&${dir}&${spd}&${spd}`), 300);
-                    };
-                    const stop = () => {
-                        if (!ptzPressed) return;
-                        const ip = getIp(); if (!ip) return;
-                        ptzPressed = false; activeMove = null;
-                        clearInterval(activeInterval); activeInterval = null;
-                        cgi(ip, '/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop');
-                        setTimeout(() => cgi(ip, '/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop'), 150);
-                    };
-                    btn.addEventListener('mousedown', start);
-                    btn.addEventListener('mouseup',   stop);
-                    btn.addEventListener('contextmenu', e => e.preventDefault());
-                    btn.addEventListener('touchstart', e => {
                         e.preventDefault();
+                        btn.setPointerCapture(e.pointerId);
+                        ptzPointerId = e.pointerId;
                         btn.classList.add('pressed');
-                        start();
-                    }, { passive: false });
-                    btn.addEventListener('touchend',   e => {
-                        e.preventDefault();
+                        const spd = getPtzSpeed();
+                        activeMove = { ip, cmd: 'ptzstop' };
+                        cgi(ip, `/cgi-bin/ptzctrl.cgi?ptzcmd&${dir}&${spd}&${spd}`);
+                        // Keepalive: resend every 600 ms so the camera doesn't
+                        // auto-stop — longer interval means fewer in-flight requests
+                        // and less chance of a stop racing with a keepalive.
+                        activeInterval = setInterval(() => {
+                            if (ptzPointerId !== null)
+                                cgi(ip, `/cgi-bin/ptzctrl.cgi?ptzcmd&${dir}&${spd}&${spd}`);
+                        }, 600);
+                    };
+
+                    const stop = (e) => {
+                        if (e && e.pointerId !== ptzPointerId) return; // different pointer
+                        if (ptzPointerId === null) return; // not moving
+                        ptzPointerId = null;
                         btn.classList.remove('pressed');
-                        stop();
-                    }, { passive: false });
-                    btn.addEventListener('touchcancel', () => {
-                        btn.classList.remove('pressed');
-                        stop();
-                    });
-                    document.addEventListener('mouseup', stop);
-                    btn.addEventListener('mouseleave', () => { if (ptzPressed) stop(); });
+                        clearInterval(activeInterval); activeInterval = null;
+                        const ip = getIp();
+                        activeMove = null;
+                        if (ip) cgi(ip, '/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop');
+                    };
+
+                    btn.addEventListener('pointerdown',   start);
+                    btn.addEventListener('pointerup',     stop);
+                    btn.addEventListener('pointercancel', stop);
+                    btn.addEventListener('contextmenu', e => e.preventDefault());
                 });
 
                 // Zoom slider (VISCA direct)
@@ -2535,7 +2572,13 @@
                 sec.querySelectorAll('.preset-btn').forEach(btn => {
                     const n = btn.dataset.preset;
                     let holdTimer = null;
-                    const startPress = () => {
+                    let presetPointerId = null;
+
+                    const startPress = (e) => {
+                        if (presetPointerId !== null) return;
+                        e.preventDefault();
+                        btn.setPointerCapture(e.pointerId);
+                        presetPointerId = e.pointerId;
                         btn.classList.add('pressed');
                         holdTimer = setTimeout(() => {
                             holdTimer = null;
@@ -2544,7 +2587,9 @@
                             showPresetConfirm(n);
                         }, 600);
                     };
-                    const endPress = () => {
+                    const endPress = (e) => {
+                        if (e && e.pointerId !== presetPointerId) return;
+                        presetPointerId = null;
                         btn.classList.remove('pressed');
                         if (holdTimer) {
                             clearTimeout(holdTimer);
@@ -2553,17 +2598,16 @@
                             cgi(ip, `/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&${n}`);
                         }
                     };
-                    const cancelPress = () => {
+                    const cancelPress = (e) => {
+                        if (e && e.pointerId !== presetPointerId) return;
+                        presetPointerId = null;
                         btn.classList.remove('pressed');
                         if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
                     };
-                    btn.addEventListener('mousedown', startPress);
-                    btn.addEventListener('mouseup', endPress);
-                    btn.addEventListener('mouseleave', cancelPress);
+                    btn.addEventListener('pointerdown',   startPress);
+                    btn.addEventListener('pointerup',     endPress);
+                    btn.addEventListener('pointercancel', cancelPress);
                     btn.addEventListener('contextmenu', e => e.preventDefault());
-                    btn.addEventListener('touchstart', e => { e.preventDefault(); startPress(); });
-                    btn.addEventListener('touchend', e => { e.preventDefault(); endPress(); });
-                    btn.addEventListener('touchcancel', cancelPress);
                 });
 
                 // ── Settings inner tab switching ───────────────
@@ -3064,10 +3108,12 @@
                 if (ptzSpeedSlider) {
                     ptzSpeedSlider.value = ptzSpeed[i] || 8;
                     ptzSpeedSlider.closest('.setting-row').querySelector('label span').textContent = ptzSpeedSlider.value;
+                    let ptzSpeedSaveTimer = null;
                     ptzSpeedSlider.addEventListener('input', () => {
                         ptzSpeedSlider.closest('.setting-row').querySelector('label span').textContent = ptzSpeedSlider.value;
                         ptzSpeed[i] = +ptzSpeedSlider.value;
-                        saveCameras();
+                        clearTimeout(ptzSpeedSaveTimer);
+                        ptzSpeedSaveTimer = setTimeout(saveCameras, 500);
                     });
                 }
 
@@ -3077,10 +3123,12 @@
                     speedSlider.value = initialSpeed;
                     trackingMaxSpeed[i] = +initialSpeed;
                     speedSlider.previousElementSibling.querySelector('span').textContent = speedSlider.value;
+                    let maxSpeedSaveTimer = null;
                     speedSlider.addEventListener('input', () => {
                         speedSlider.previousElementSibling.querySelector('span').textContent = speedSlider.value;
                         trackingMaxSpeed[i] = +speedSlider.value;
-                        saveCameras();
+                        clearTimeout(maxSpeedSaveTimer);
+                        maxSpeedSaveTimer = setTimeout(saveCameras, 500);
                     });
                 }
 
@@ -3163,7 +3211,8 @@
                     if (!trackingSettings[dzDrag.slot]) trackingSettings[dzDrag.slot] = {};
                     trackingSettings[dzDrag.slot].deadZone = { ...dz };
                     drawTrackingOverlay(dzDrag.slot, null, null);
-                    saveCameras();
+                    clearTimeout(dzSaveTimer);
+                    dzSaveTimer = setTimeout(saveCameras, 300);
                 }, { passive: false });
                 streamEl.addEventListener('touchend', e => {
                     if (!dzDrag || dzDrag.streamEl !== streamEl) return;
@@ -3257,13 +3306,24 @@
                 });
                 item.addEventListener('dragend', () => {
                     item.classList.remove('dragging');
+                    dragOverIndex = null;
                     document.querySelectorAll('.camera-item').forEach(el => el.classList.remove('drag-over'));
                 });
                 item.addEventListener('dragover', e => {
                     e.preventDefault();
                     e.dataTransfer.dropEffect = 'move';
-                    document.querySelectorAll('.camera-item').forEach(el => el.classList.remove('drag-over'));
-                    if (index !== dragSrcIndex) item.classList.add('drag-over');
+                    if (index !== dragSrcIndex) {
+                        // Only update classes if the hovered item changed
+                        if (dragOverIndex !== index) {
+                            if (dragOverIndex !== null) {
+                                const prev = list.querySelector(`.camera-item[data-id]`);
+                                // remove drag-over from previous
+                                list.querySelectorAll('.camera-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+                            }
+                            dragOverIndex = index;
+                            item.classList.add('drag-over');
+                        }
+                    }
                 });
                 item.addEventListener('drop', e => {
                     e.preventDefault();
@@ -3271,6 +3331,7 @@
                     const moved = cameras.splice(dragSrcIndex, 1)[0];
                     cameras.splice(index, 0, moved);
                     dragSrcIndex = null;
+                    dragOverIndex = null;
                     renderList();
                     saveCameras();
                 });
