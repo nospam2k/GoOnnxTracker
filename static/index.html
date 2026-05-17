@@ -2403,9 +2403,11 @@
 
                 // ── PTZ wiring ─────────────────────────────────
                 const getIp = () => getSlotIp(i);
-                let activePtzDir = null;  // Track currently active direction for this slot
-                let activePtzBtn = null;  // Track currently active button for this slot
-                let isMoving = false;     // Track if a movement command was sent
+                let activePtzDir = null;
+                let activePtzBtn = null;
+                let isMoving = false;
+                let ptzStartTime = 0;
+                const PTZ_MIN_MS = 200;  // minimum ms between start and stop so camera has time to process
 
                 // D-pad: pointerdown starts move, pointerup/pointercancel stops.
                 // Using Pointer Events avoids the 300 ms synthetic-mouse delay on
@@ -2429,6 +2431,7 @@
                         activePtzDir = dir;
                         activePtzBtn = btn;
                         isMoving = true;
+                        ptzStartTime = Date.now();
                         btn.classList.add('pressed');
                         const spd = getPtzSpeed();
                         activeMove = { ip, cmd: 'ptzstop' };
@@ -2442,7 +2445,9 @@
                         if (activePtzBtn) activePtzBtn.classList.remove('pressed');
                         activePtzBtn = null;
                         activeMove = null;
-                        if (ip) cgi(ip, '/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop');
+                        if (!ip) return;
+                        const delay = Math.max(0, PTZ_MIN_MS - (Date.now() - ptzStartTime));
+                        setTimeout(() => cgi(ip, '/cgi-bin/ptzctrl.cgi?ptzcmd&ptzstop'), delay);
                     };
 
                     btn.addEventListener('pointerdown', start);
